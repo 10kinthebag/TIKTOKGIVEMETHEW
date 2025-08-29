@@ -20,8 +20,6 @@ ad_pattern = re.compile(
     r"|\b(?:hire|job|employment|work opportunity)\b"
     r"|(?:dm me|message me|contact me)"
     r"|\b(?:affiliate|sponsored|partnership|referral)\b"
-    r"|\b(?:subscribe|follow me|like and share)\b"
-    r"|\b(?:my business|my company|my store|my website)\b"
     r")",
     re.IGNORECASE
 )
@@ -55,10 +53,9 @@ for category in irrelevant_keywords.values():
 rant_phrases = [
     "never been", "haven't been", "havent been", "have not been",
     "never visited", "haven't visited", "havent visited", "have not visited",
-    "never went", "haven't went", "havent went", "have not went",
-    " heard it's", "heard it is", "heard its", "heard they",
-    "my friend said", "someone told me", "people say", "everyone says"
-    "according to", "based on what i heard", "from what i hear",
+    "never went", "haven't gone", "havent gone", "have not gone",
+    "heard it's", "heard it is", "heard its", "heard they",
+    "according to", "from what i hear",
     "supposedly", "apparently", "rumor has it"
 ]
 
@@ -66,11 +63,15 @@ rant_phrases = [
 
 def detect_advertisement(text: str) -> bool:
 
-   return bool(ad_pattern.search(text))
+    matches = ad_pattern.findall(text)
+    
+    return len(matches) > 0
 
 def detect_irrelevant(text: str) -> bool:
 
-    return any(word in text.lower() for word in all_irrelevant_keywords)
+    text_lower = text.lower().split()
+
+    return any(word in text_lower for word in all_irrelevant_keywords)
 
 def detect_rant_without_visit(text: str) -> bool:
 
@@ -86,24 +87,22 @@ def detect_contradiction(text: str, value: int) -> bool:
 
         rating = value
     
-        return (rating <= 3 & has_positive) and (rating > 3 & has_negative)
+        return (rating <= 3 and has_positive) or (rating > 3 and has_negative)
 
-def detect_short_review(text: str, min_words: int = 5) -> bool:
+def detect_short_review(text: str, min_words: int = 3) -> bool:
+
+    sentiment_words = ["good", "great", "nice", "bad", "terrible", "awful"]
     
-    return len(text.split()) < min_words
+    return len(text.split()) < min_words and not any(w in text.lower() for w in sentiment_words)
 
 def detect_spam_content(text: str) -> bool:
-    """Enhanced spam detection focusing on keyboard patterns and gibberish"""
+
     text_lower = text.lower()
     
     spam_patterns = [
         r'qwerty|asdfgh|zxcvbn',  # keyboard rows
-        r'abcdef|123456|qazwsx',  # sequential patterns
-        r'[bcdfghjklmnpqrstvwxyz]{6,}',  # long consonant sequences
-        r'[aeiou]{5,}',  # excessive vowels
         r'(.)\1{4,}',  # same character repeated 5+ times
         r'^[^aeiou\s]{10,}$',  # words with no vowels (likely gibberish)
-        r'^\d+$',  # only numbers
         r'^[^\w\s]+$',  # only special characters
     ]
     
@@ -113,14 +112,14 @@ def detect_spam_content(text: str) -> bool:
     
     return False
 
-# Semantic Relevancy (not sure if uw to keep this u need download )
+# Semantic Relevancy 
 embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
 
 def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
     emb_review = embedding_model.encode(text, convert_to_tensor=True)
     emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
     similarity = util.cos_sim(emb_review, emb_location).item()
-    return similarity < 0.5  # threshold
+    return similarity < 0.2 # threshold
 
 def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
     
@@ -138,7 +137,8 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
         df['contradiction_flag'] = df.apply(lambda row: detect_contradiction(row['text'], row['rating']), axis=1)
 
     df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
-                                 'irrelevant_flag_semantic','short_review_flag']].any(axis=1)
+                                 'irrelevant_flag_semantic','short_review_flag', 
+                                 'spam_flag', 'contradiction_flag']].any(axis=1)
     
     return df
 
