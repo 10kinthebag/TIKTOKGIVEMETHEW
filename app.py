@@ -11,7 +11,7 @@ import json
 
 # Page config
 st.set_page_config(
-    page_title="10kinthebag - TikTok TechJam 2025",
+    page_title="ReviewGuard AI - TikTok TechJam 2024",
     page_icon="🛡️",
     layout="wide",
     initial_sidebar_state="expanded"
@@ -154,9 +154,9 @@ def get_quality_category(score):
 # Header
 st.markdown("""
 <div class="main-header">
-    <h1>🛡️ 10kinthebag</h1>
+    <h1>🛡️ ReviewGuard AI</h1>
     <h3>Intelligent Review Quality Assessment System</h3>
-    <p>TikTok TechJam 2025 • Powered by Advanced ML & NLP</p>
+    <p>TikTok TechJam 2024 • Powered by Advanced ML & NLP</p>
 </div>
 """, unsafe_allow_html=True)
 
