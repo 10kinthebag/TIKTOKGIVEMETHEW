@@ -4,7 +4,8 @@ import os
 import time
 import sys
 
-from sentence_transformers import SentenceTransformer, util
+from src.image_processor import load_image_from_file, load_image_from_url, load_model, classify_image
+#from sentence_transformers import SentenceTransformer, util
 
 # --- Rule Definitions ---
 ad_pattern = re.compile(
@@ -113,14 +114,42 @@ def detect_spam_content(text: str) -> bool:
     
     return False
 
-# Semantic Relevancy (not sure if uw to keep this u need download )
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
+def detect_image_relevance_url(url: str, model) -> bool:
 
-def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
-    emb_review = embedding_model.encode(text, convert_to_tensor=True)
-    emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
-    similarity = util.cos_sim(emb_review, emb_location).item()
-    return similarity < 0.5  # threshold
+    try:
+        # Load the image from URL
+        img_array = load_image_from_url(url)
+
+        # Use your existing classifier
+        category = classify_image(model, img_array)
+
+        # Return True if category is not 'Other'
+        return category != "Other"
+
+    except Exception as e:
+        print(f"Error processing image from {url}: {e}")
+        return False
+
+def detect_image_relevance_file(filepath: str, model) -> bool:
+    """
+    Returns True if image from local file is relevant (not 'Other').
+    """
+    try:
+        img_array = load_image_from_file(filepath)
+        category = classify_image(model, img_array)
+        return category != "Other"
+    except Exception as e:
+        print(f"Error processing image file {filepath}: {e}")
+        return False
+    
+# Semantic Relevancy (not sure if uw to keep this u need download )
+#embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
+
+#def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
+    #emb_review = embedding_model.encode(text, convert_to_tensor=True)
+    #emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
+    #similarity = util.cos_sim(emb_review, emb_location).item()
+    #return similarity < 0.5  # threshold
 
 def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
     
@@ -131,14 +160,23 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
         df['spam_flag'] = df['text'].apply(detect_spam_content)
         df['short_review_flag'] = df['text'].apply(detect_short_review)
     
-    if 'business_name' in df.columns:
-        df['irrelevant_flag_semantic'] = df.apply(lambda row: detect_irrelevant_semantic(row['text'], row['business_name']), axis=1)
+    #if 'business_name' in df.columns:
+        #df['irrelevant_flag_semantic'] = df.apply(lambda row: detect_irrelevant_semantic(row['text'], row['business_name']), axis=1)
  
     if 'text' in df.columns and 'rating' in df.columns:
         df['contradiction_flag'] = df.apply(lambda row: detect_contradiction(row['text'], row['rating']), axis=1)
 
-    df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
-                                 'irrelevant_flag_semantic','short_review_flag']].any(axis=1)
+    model = load_model()
+    if 'photo' in df.columns:
+        def detect_image(photo):
+            if not isinstance(photo, str) or photo.strip() == "":
+                return False  # no photo → treat as not irrelevant
+            if photo.startswith("http://") or photo.startswith("https://"):
+                return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
+            else:
+                return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
+
+        df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
     
     return df
 
@@ -146,27 +184,24 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
 #Removes rows that violates any policy rules and returns the filtered dataframe
 #TEMP!! ALSO PRODUCES A DATAFRAME WITH THE FLAG COLUMNS FOR POLICY TESTING
 def filter_dataset(df: pd.DataFrame) -> pd.DataFrame:
-    df_flag = df[(df['ad_flag'] | df['irrelevant_flag_rule'] | df['rant_flag'] | df['spam_flag'] | df['irrelevant_flag_semantic'] | df['short_review_flag'] | df['contradiction_flag'])].reset_index(drop=True)
+
+    df_flag = df[(df['ad_flag'] | df['irrelevant_flag_rule'] | df['rant_flag'] | df['spam_flag'] | df['short_review_flag'] | df['contradiction_flag'])].reset_index(drop=True)
     os.makedirs("data/filteredDataWithFlags", exist_ok=True)
     output_file = os.path.join("data/filteredDataWithFlags", f"cleaned_reviews_{int(time.time())}.csv")
     df_flag.to_csv(output_file, index=False)
 
-    df_new = df[~(df['ad_flag'] | df['irrelevant_flag_rule'] | df['rant_flag'] | df['spam_flag'] | df['irrelevant_flag_semantic'] | df['short_review_flag'] | df['contradiction_flag'])].reset_index(drop=True)
-    print(f"Filtered dataset has {len(df_new)} rows")
+    df_new = df[~(df['ad_flag'] | df['irrelevant_flag_rule'] | df['rant_flag'] | df['spam_flag'] | df['short_review_flag'] | df['contradiction_flag'])].reset_index(drop=True)
 
-    return df_new.drop(['ad_flag', 'irrelevant_flag_rule', 'rant_flag', 'contradiction_flag', 'spam_flag', 'irrelevant_flag_semantic', 'short_review_flag', ], axis=1)
+    return df_new.drop(['ad_flag', 'irrelevant_flag_rule', 'rant_flag', 'contradiction_flag', 'spam_flag', 'short_review_flag', ], axis=1)
 
 # --- Main method ---
 
 def main(input_csv: str):
     
     df = pd.read_csv(input_csv)
-    print(df.head())
-    print(f"Dataset has {len(df)} rows")
 
     # Apply policy rules
     df = apply_policy_rules(df)
-    print(df[['ad_flag','irrelevant_flag_rule','rant_flag','short_review_flag']].head())
 
     # Filter dataset according to rules
     filtered_df = filter_dataset(df)
