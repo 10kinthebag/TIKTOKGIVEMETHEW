@@ -1,5 +1,10 @@
 import time
-from trainer_setup import get_trainer
+try:
+    # Try relative import first (when run from training_scripts dir)
+    from trainer_setup import get_trainer
+except ImportError:
+    # Fall back to absolute import (when run from root dir)
+    from training_scripts.trainer_setup import get_trainer
 
 
 def main():

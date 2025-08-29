@@ -1,7 +1,13 @@
 from transformers import AutoTokenizer, AutoModelForSequenceClassification, Trainer
 from datasets import load_from_disk
-from training_scripts.training_config import training_args
-from training_scripts.metrics import compute_metrics
+try:
+    # Try relative imports first (when run from training_scripts dir)
+    from training_config import training_args
+    from metrics import compute_metrics
+except ImportError:
+    # Fall back to absolute imports (when run from root dir)
+    from training_scripts.training_config import training_args
+    from training_scripts.metrics import compute_metrics
 
 
 MODEL_NAME = "distilbert-base-uncased"
