@@ -4,7 +4,7 @@ import os
 import time
 import sys
 
-from image_processor import load_image_from_file, load_image_from_url, load_model, classify_image
+from src.image_processor import load_image_from_file, load_image_from_url, load_model, classify_image
 #from sentence_transformers import SentenceTransformer, util
 
 # --- Rule Definitions ---
