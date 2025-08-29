@@ -1,0 +1,8 @@
+business_name,author_name,text,photo,rating,rating_category
+Haci'nin Yeri - Yigit Lokantasi,İrem Eren,What you see is 125 TL in total. It's a pretty convenient place. We can say that it is an artisan restaurant; you should not expect a restaurant; but they are still quite good in terms of price and performance. As of July 1; prices will increase,dataset/taste/hacinin_yeri_irem_eren.png,5,taste
+Riviera,Yılmaz Unal,Good quality service; nice customer service; they are happy to help with a smile.,dataset/indoor_atmosphere/riviera_yılmaz_unal.png,5,indoor_atmosphere
+Sakip Usta Gaziantep,Berat Türk,If you come to Antep; sit down and taste the Beyran soup; served plain and with garlic.,dataset/indoor_atmosphere/sakip_usta_gaziantep_berat_turk.png,5,indoor_atmosphere
+Mcdonalds Fethiye,Serdar Yıldız,There was a hair in the fries; disgusting.,dataset/menu/mcdonalds_fethiye_serdar_yildiz.png,1,menu
+Tatbak,Baran İsci,It was one of the best doner I've ever eaten in my life. Thank you very much.,dataset/outdoor_atmosphere/tatbak_baran_isci.png,5,outdoor_atmosphere
+Tatbak,İsil Colak,There were problems with cleaning. Chefs must wear gloves.,dataset/indoor_atmosphere/tatbak_isil_colak.png,1,indoor_atmosphere
+Kadineli,Ersin Yaynık,There is little variety of food on the menu. Also; the food on the menu is not very tasty.,dataset/menu/kadineli_ersin_yaynik.png,2,menu
