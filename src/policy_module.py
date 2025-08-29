@@ -113,13 +113,13 @@ def detect_spam_content(text: str) -> bool:
     return False
 
 # Semantic Relevancy 
-embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
+# embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
 
-def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
-    emb_review = embedding_model.encode(text, convert_to_tensor=True)
-    emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
-    similarity = util.cos_sim(emb_review, emb_location).item()
-    return similarity < 0.2 # threshold
+# def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
+#     emb_review = embedding_model.encode(text, convert_to_tensor=True)
+#     emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
+#     similarity = util.cos_sim(emb_review, emb_location).item()
+#     return similarity < 0.2 # threshold
 
 def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
     
@@ -130,8 +130,8 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
         df['spam_flag'] = df['text'].apply(detect_spam_content)
         df['short_review_flag'] = df['text'].apply(detect_short_review)
     
-    if 'business_name' in df.columns:
-        df['irrelevant_flag_semantic'] = df.apply(lambda row: detect_irrelevant_semantic(row['text'], row['business_name']), axis=1)
+    # if 'business_name' in df.columns:
+    #     df['irrelevant_flag_semantic'] = df.apply(lambda row: detect_irrelevant_semantic(row['text'], row['business_name']), axis=1)
  
     if 'text' in df.columns and 'rating' in df.columns:
         df['contradiction_flag'] = df.apply(lambda row: detect_contradiction(row['text'], row['rating']), axis=1)
