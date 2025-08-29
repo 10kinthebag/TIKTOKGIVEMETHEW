@@ -10,7 +10,7 @@ import time
 from datetime import datetime, timedelta
 import random
 
-from policy_module import (
+from src.policy_module import (
     detect_advertisement,
     detect_irrelevant,
     detect_rant_without_visit,
