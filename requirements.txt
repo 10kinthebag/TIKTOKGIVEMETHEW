@@ -1,0 +1,11 @@
+transformers
+torch
+datasets
+scikit-learn
+pandas
+numpy
+matplotlib
+seaborn
+ftfy
+unidecode
+regex
