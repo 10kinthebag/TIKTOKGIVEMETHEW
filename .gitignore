@@ -1,3 +1,8 @@
+
+# Ignore fine-tuned BERT model
+
+eval/bert_finetuned_fake_review/
+
 # Virtual Environment
 nlp_env/
 venv/
@@ -76,3 +81,4 @@ logs/
 # Model artifacts
 model_artifacts/
 saved_models/
+
