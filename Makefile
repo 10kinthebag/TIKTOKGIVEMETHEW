@@ -1,19 +1,32 @@
 SHELL := /bin/zsh
 
-.PHONY: help env install data_prep tokenize train evaluate test api streamlit demo quantize all
+.PHONY: help env install data_prep tokenize tokenize_hybrid tokenize_ground_truth tokenize_weighted train train_progressive evaluate test api streamlit demo quantize all
 
 help:
-	@echo "make env        # create & activate venv, install deps"
-	@echo "make data_prep  # run data exploration, cleaning, pseudo-labeling, split"
-	@echo "make tokenize   # tokenize datasets"
-	@echo "make train      # fine-tune model and save to ./final_model"
-	@echo "make evaluate   # evaluate on test set"
-	@echo "make test       # run hybrid pipeline test cases"
-	@echo "make api        # start Flask API"
-	@echo "make streamlit  # start Streamlit dashboard"
-	@echo "make demo       # start Gradio demo"
-	@echo "make quantize   # dynamic quantization of final model"
-	@echo "make all        # env -> data_prep -> tokenize -> train -> evaluate -> test"
+	@echo "Training Data Options:"
+	@echo "make tokenize                # tokenize with pseudo labels only"  
+	@echo "make tokenize_ground_truth   # tokenize with ground truth only"
+	@echo "make tokenize_hybrid         # tokenize with both datasets combined"
+	@echo "make tokenize_weighted       # tokenize with weighted approach"
+	@echo ""
+	@echo "Training Options:"
+	@echo "make train                   # standard training"
+	@echo "make train_progressive       # progressive training (ground truth → pseudo)"
+	@echo ""
+	@echo "Testing Trained Model:"
+	@echo "make test_model              # quick test of trained model"
+	@echo "make demo_model              # interactive demo with trained model"
+	@echo "make use_model               # example usage of trained model"
+	@echo ""
+	@echo "Other Commands:"
+	@echo "make env                     # create & activate venv, install deps"
+	@echo "make data_prep               # run data exploration, cleaning, pseudo-labeling"
+	@echo "make evaluate                # evaluate on test set"
+	@echo "make test                    # run hybrid pipeline test cases"
+	@echo "make api                     # start Flask API"
+	@echo "make streamlit               # start Streamlit dashboard"
+	@echo "make demo                    # start Gradio demo"
+	@echo "make quantize                # dynamic quantization of final model"
 
 env:
 	python3 -m venv nlp_env && \
@@ -32,7 +45,35 @@ data_prep:
 
 tokenize:
 	source nlp_env/bin/activate && \
-	python training_scripts/tokenization.py
+	python training_scripts/tokenization.py pseudo
+
+tokenize_ground_truth:
+	source nlp_env/bin/activate && \
+	python training_scripts/tokenization.py ground_truth
+
+tokenize_hybrid:
+	source nlp_env/bin/activate && \
+	python training_scripts/tokenization.py hybrid
+
+tokenize_weighted:
+	source nlp_env/bin/activate && \
+	python training_scripts/weighted_tokenization.py
+
+train_progressive:
+	source nlp_env/bin/activate && \
+	python training_scripts/progressive_training.py
+
+test_model:
+	source nlp_env/bin/activate && \
+	python quick_test_model.py
+
+demo_model:
+	source nlp_env/bin/activate && \
+	python hybrid_pipeline/demo_interface.py
+
+use_model:
+	source nlp_env/bin/activate && \
+	python use_trained_model.py
 
 train:
 	source nlp_env/bin/activate && \
