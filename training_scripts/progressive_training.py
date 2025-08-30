@@ -108,7 +108,7 @@ def progressive_training():
         learning_rate=2e-5,  # Standard learning rate
         weight_decay=0.01,
         logging_steps=50,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1",
@@ -122,7 +122,6 @@ def progressive_training():
         train_dataset=gt_train,
         eval_dataset=gt_val,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
     )
     
     # Train stage 1
@@ -148,7 +147,7 @@ def progressive_training():
         learning_rate=5e-6,  # Much lower learning rate for fine-tuning
         weight_decay=0.01,
         logging_steps=100,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1",
@@ -162,9 +161,7 @@ def progressive_training():
         train_dataset=pseudo_train,
         eval_dataset=pseudo_val,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
     )
-    
     # Train stage 2
     start_time = time.time()
     stage2_trainer.train()

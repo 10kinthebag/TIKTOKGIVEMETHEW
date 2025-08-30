@@ -45,7 +45,6 @@ checkpoints/
 *.csv
 *.json
 *.txt
-data/
 groundTruthData/
 
 # Jupyter Notebook
