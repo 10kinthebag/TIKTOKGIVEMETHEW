@@ -1,16 +1,13 @@
-[10kinthebag README (1).md](https://github.com/user-attachments/files/22058417/10kinthebag.README.1.md)
 ## **ReviewGuard AI**
 
 This document provides details about the frontend and backend implementation for our ReviewGuard AI project.
 
-ReviewGuard AI Frontend  
-Review Guard AI Backend
+[ReviewGuard AI Frontend](#reviewguard-ai-frontend)  
+[ReviewGuard AI Backend](#reviewguard-ai-backend)
 
 ## **Project Overview:**
 
 ReviewGuard AI is a multimodal review moderation system developed to automatically assess the quality and relevancy of Google location reviews, improving reliability of review platforms and enhancing user experience. It is built using Python, PyTorch, and Hugging Face models, with a Streamlit and Gradio frontend, leveraging data processing libraries, machine learning pipelines, and web technologies for an interactive and efficient user experience.
-
-Github Link: [https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git](https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git)
 
 ## **Setup Instructions:**
 
