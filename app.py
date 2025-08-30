@@ -11,11 +11,12 @@ import os
 import sys
 import tempfile
 import shutil
+from typing import Union
 
 # --- MODEL LOADING ---
 ML_MODELS_AVAILABLE = False
 IMAGE_PROCESSING_AVAILABLE = False
-pipeline = None
+pipeline = None  # type: Union[EnhancedReviewClassificationPipeline, ReviewClassificationPipeline, None]
 
 # Initialize placeholder functions
 def load_image_from_file(*args, **kwargs):
@@ -35,11 +36,14 @@ try:
     current_dir = os.path.dirname(os.path.abspath(__file__))
     sys.path.insert(0, current_dir)
     
-    from inference.hybrid_pipeline import ReviewClassificationPipeline
-    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    from inference.enhanced_hybrid_pipeline import EnhancedReviewClassificationPipeline
     from src import policy_module
     
-    pipeline = ReviewClassificationPipeline()
+    # Use enhanced pipeline with LLM support
+    pipeline = EnhancedReviewClassificationPipeline(
+        model_path="./models/roberta_policy_based_model",
+        confidence_threshold=0.70
+    )
     ML_MODELS_AVAILABLE = True
     print("✅ ML models and pipeline loaded successfully")
     
@@ -76,46 +80,52 @@ except Exception as e:
 # --- CSV CLEANING INTEGRATION ---
 def run_cleaning_script(csv_file_path, output_dir=None):
     """
-    Integrate with your py_script.py for CSV cleaning
+    Integrate with py_script.py for CSV cleaning
     """
     try:
-        # Import your cleaning script
+        # Import the cleaning script
         current_dir = os.path.dirname(os.path.abspath(__file__))
         cleaning_script_path = os.path.join(current_dir, "data", "cleanedData", "py_script.py")
         
         if not os.path.exists(cleaning_script_path):
             st.error(f"Cleaning script not found at: {cleaning_script_path}")
-            return None
+            return None, None
         
         # Import the cleaning module dynamically
         import importlib.util
         spec = importlib.util.spec_from_file_location("py_script", cleaning_script_path)
-        cleaning_module = importlib.util.module_from_spec(spec)
-        sys.modules["py_script"] = cleaning_module
-        spec.loader.exec_module(cleaning_module)
-        
-        # If your py_script.py has a main cleaning function, call it here
-        # Adjust this based on your actual py_script.py structure
-        if hasattr(cleaning_module, 'clean_csv_data'):
-            cleaned_df = cleaning_module.clean_csv_data(csv_file_path)
-        elif hasattr(cleaning_module, 'main'):
-            # If your script has a main function that processes files
-            cleaned_df = cleaning_module.main(csv_file_path)
+        if spec is not None and spec.loader is not None:
+            cleaning_module = importlib.util.module_from_spec(spec)
+            sys.modules["py_script"] = cleaning_module
+            spec.loader.exec_module(cleaning_module)
         else:
-            # If your script processes files differently, modify this section
-            # For now, we'll try to execute the script and look for output
-            st.warning("Cleaning script found but no standard function detected. Please check py_script.py structure.")
-            return None
+            st.error("Could not load cleaning script module")
+            return None, None
         
-        return cleaned_df
+        # Load and clean the data using the script functions
+        df = cleaning_module.load_csv(csv_file_path)
+        if df is None:
+            return None, None
+            
+        # Apply cleaning steps
+        text_cols, numeric_cols = cleaning_module.detect_column_types(df)
+        df = cleaning_module.normalize_text_columns(df, text_cols)
+        df = cleaning_module.normalize_numeric_columns(df, numeric_cols)
+        df = cleaning_module.remove_empty_rows(df)
+        df = cleaning_module.remove_duplicates(df)
+        
+        # Save cleaned file and get path
+        output_path = cleaning_module.save_csv(df, csv_file_path)
+        
+        return df, output_path
         
     except Exception as e:
         st.error(f"Error running cleaning script: {str(e)}")
-        return None
+        return None, None
 
 def process_uploaded_csv(uploaded_file):
     """
-    Process uploaded CSV file with cleaning pipeline
+    Process uploaded CSV file with cleaning pipeline and model filtering
     """
     if uploaded_file is not None:
         try:
@@ -125,33 +135,39 @@ def process_uploaded_csv(uploaded_file):
                 temp_path = tmp_file.name
             
             # Show file info
-            st.info(f"📁 Processing file: {uploaded_file.name} ({uploaded_file.size:,} bytes)")
+            st.info(f"Processing file: {uploaded_file.name} ({uploaded_file.size:,} bytes)")
             
             # Option 1: Use cleaning script
-            with st.expander("🔧 Data Cleaning Options", expanded=True):
+            with st.expander("Data Cleaning Options", expanded=True):
                 use_cleaning_script = st.checkbox("Apply automated data cleaning", value=True)
                 
                 if use_cleaning_script:
-                    st.info("🚀 Running automated cleaning pipeline...")
+                    st.info("Running automated cleaning pipeline...")
                     
                     with st.spinner("Cleaning data with py_script.py..."):
-                        cleaned_df = run_cleaning_script(temp_path)
+                        cleaned_df, output_path = run_cleaning_script(temp_path)
                     
                     if cleaned_df is not None:
-                        st.success("✅ Data cleaning completed successfully!")
+                        st.success("Data cleaning completed successfully!")
                         df = cleaned_df
+                        
+                        # Store the cleaned file path for download
+                        st.session_state.cleaned_file_path = output_path
+                        
                     else:
-                        st.warning("⚠️ Cleaning script failed, loading raw data...")
+                        st.warning("Cleaning script failed, loading raw data...")
                         df = pd.read_csv(temp_path)
+                        st.session_state.cleaned_file_path = None
                 else:
                     # Load raw CSV
                     df = pd.read_csv(temp_path)
+                    st.session_state.cleaned_file_path = None
             
             # Clean up temp file
             os.unlink(temp_path)
             
             # Display dataset info
-            st.markdown("### 📊 Dataset Overview")
+            st.markdown("### Dataset Overview")
             col1, col2, col3, col4 = st.columns(4)
             
             with col1:
@@ -165,7 +181,7 @@ def process_uploaded_csv(uploaded_file):
                 st.metric("Data Completeness", f"{completeness:.1f}%")
             
             # Show column information
-            st.markdown("### 📋 Column Information")
+            st.markdown("### Column Information")
             col_info = pd.DataFrame({
                 'Column': df.columns,
                 'Data Type': df.dtypes.astype(str),
@@ -187,12 +203,12 @@ def process_uploaded_csv(uploaded_file):
 # --- STREAMLIT CONFIG ---
 st.set_page_config(
     page_title="ReviewGuard AI | TikTok TechJam 2025",
-    page_icon="🛡️",
+    page_icon="⚡",
     layout="wide",
     initial_sidebar_state="expanded"
 )
 
-# Enhanced professional TikTok styling
+# PROFESSIONAL STYLING - SIDEBAR SAFE
 st.markdown("""
 <style>
     @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap');
@@ -227,23 +243,6 @@ st.markdown("""
         100% { background-position: 0% 50%; }
     }
     
-    .tiktok-header::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        bottom: 0;
-        background: radial-gradient(circle at 20% 80%, rgba(255,255,255,0.08) 0%, transparent 50%),
-                    radial-gradient(circle at 80% 20%, rgba(37,244,238,0.08) 0%, transparent 50%);
-        animation: shimmer 4s ease-in-out infinite alternate;
-    }
-    
-    @keyframes shimmer {
-        0% { opacity: 0.5; }
-        100% { opacity: 1; }
-    }
-    
     .professional-card {
         background: linear-gradient(145deg, #161616 0%, #1f1f1f 100%);
         border: 1px solid #333;
@@ -254,16 +253,6 @@ st.markdown("""
         overflow: hidden;
         box-shadow: 0 8px 32px rgba(0,0,0,0.5);
         backdrop-filter: blur(10px);
-    }
-    
-    .professional-card::before {
-        content: '';
-        position: absolute;
-        top: 0;
-        left: 0;
-        right: 0;
-        height: 2px;
-        background: linear-gradient(90deg, #fe2c55, #25f4ee);
     }
     
     .metric-professional {
@@ -280,74 +269,6 @@ st.markdown("""
         transform: translateY(-4px);
         border-color: #fe2c55;
         box-shadow: 0 12px 40px rgba(254, 44, 85, 0.2);
-    }
-    
-    .metric-number {
-        font-size: 2.5rem;
-        font-weight: 800;
-        margin: 0;
-        background: linear-gradient(135deg, #fe2c55, #25f4ee);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    
-    .metric-label {
-        color: #888;
-        font-size: 0.9rem;
-        font-weight: 500;
-        letter-spacing: 0.5px;
-        text-transform: uppercase;
-        margin-top: 0.5rem;
-    }
-    
-    .quality-score-display {
-        font-size: 4rem;
-        font-weight: 900;
-        text-align: center;
-        margin: 2rem 0;
-        position: relative;
-    }
-    
-    .score-excellent { 
-        background: linear-gradient(135deg, #25f4ee 0%, #fe2c55 100%);
-        -webkit-background-clip: text;
-        -webkit-text-fill-color: transparent;
-        background-clip: text;
-    }
-    .score-good { color: #25f4ee; }
-    .score-average { color: #ffd700; }
-    .score-poor { color: #fe2c55; }
-    
-    .violation-alert {
-        background: linear-gradient(135deg, #fe2c55, #ff1744);
-        color: white;
-        padding: 1rem 1.5rem;
-        border-radius: 12px;
-        margin: 0.5rem 0;
-        border-left: 4px solid #ffd700;
-        box-shadow: 0 4px 20px rgba(254, 44, 85, 0.3);
-        font-weight: 500;
-    }
-    
-    .analysis-btn {
-        background: linear-gradient(135deg, #fe2c55 0%, #25f4ee 100%);
-        border: none;
-        color: white;
-        padding: 1rem 2rem;
-        border-radius: 12px;
-        font-weight: 700;
-        font-size: 1rem;
-        cursor: pointer;
-        transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
-        box-shadow: 0 6px 20px rgba(254, 44, 85, 0.4);
-        width: 100%;
-        margin: 1rem 0;
-    }
-    
-    .analysis-btn:hover {
-        transform: translateY(-2px);
-        box-shadow: 0 12px 40px rgba(254, 44, 85, 0.5);
     }
     
     .section-header {
@@ -371,86 +292,75 @@ st.markdown("""
         border-radius: 2px;
     }
     
-    .status-indicator {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.5rem;
-        padding: 0.5rem 1rem;
-        border-radius: 8px;
-        font-weight: 500;
-        font-size: 0.9rem;
-    }
-    
-    .status-active {
-        background: rgba(37, 244, 238, 0.1);
-        color: #25f4ee;
-        border: 1px solid #25f4ee;
-    }
-    
-    .analysis-history-item {
-        background: rgba(40, 40, 40, 0.8);
-        border: 1px solid #333;
-        border-radius: 8px;
-        padding: 1rem;
-        margin: 0.5rem 0;
-        transition: all 0.2s ease;
-    }
-    
-    .analysis-history-item:hover {
-        border-color: #fe2c55;
-        background: rgba(50, 50, 50, 0.9);
-    }
-    
-    .progress-bar {
-        background: #333;
-        border-radius: 10px;
-        overflow: hidden;
-        height: 8px;
-        margin: 0.5rem 0;
-    }
-    
-    .progress-fill {
-        background: linear-gradient(90deg, #fe2c55, #25f4ee);
-        height: 100%;
-        border-radius: 10px;
-        transition: width 0.3s ease;
-    }
-    
-    /* File upload styling */
-    .uploadedFile {
-        background: rgba(30, 30, 30, 0.9) !important;
-        border: 2px dashed #fe2c55 !important;
-        border-radius: 12px !important;
-    }
-    
-    /* Sidebar styling */
-    .css-1d391kg {
-        background: linear-gradient(180deg, #161616 0%, #0a0a0a 100%);
-    }
-    
     /* Hide Streamlit branding */
     #MainMenu {visibility: hidden;}
     footer {visibility: hidden;}
     header {visibility: hidden;}
     
-    .stTextArea textarea {
-        background: rgba(30, 30, 30, 0.9) !important;
-        color: white !important;
-        border: 1px solid #444 !important;
-        border-radius: 8px !important;
+    /* NO SIDEBAR CSS - Let Streamlit handle it naturally */
+    
+    /* Alternative Navigation Styling */
+    .nav-button {
+        background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+        border: 1px solid #444;
+        border-radius: 8px;
+        padding: 0.75rem 1rem;
+        color: white;
+        text-align: center;
+        transition: all 0.3s ease;
+        cursor: pointer;
     }
     
-    .stSelectbox > div > div {
-        background: rgba(30, 30, 30, 0.9) !important;
-        color: white !important;
-        border: 1px solid #444 !important;
+    .nav-button:hover {
+        border-color: #fe2c55;
+        background: linear-gradient(145deg, #fe2c55, #25f4ee);
+        transform: translateY(-2px);
+    }
+    
+    .nav-button.active {
+        border-color: #25f4ee;
+        background: linear-gradient(145deg, #25f4ee, #fe2c55);
+    }
+    
+    /* Tab styling */
+    .stTabs [data-baseweb="tab-list"] {
+        gap: 8px;
+    }
+    
+    .stTabs [data-baseweb="tab"] {
+        background: linear-gradient(145deg, #2a2a2a, #1a1a1a);
+        border: 1px solid #444;
+        border-radius: 8px;
+        color: white;
+    }
+    
+    .stTabs [aria-selected="true"] {
+        background: linear-gradient(145deg, #fe2c55, #25f4ee);
+        border-color: #25f4ee;
     }
 </style>
 """, unsafe_allow_html=True)
 
-<<<<<<< Updated upstream
-# pipeline = ReviewClassificationPipeline()
-=======
+# Initialize pipeline safely
+try:
+    if 'pipeline' not in locals() or pipeline is None:
+        from inference.enhanced_hybrid_pipeline import EnhancedReviewClassificationPipeline
+        pipeline = EnhancedReviewClassificationPipeline(
+            model_path="./models/roberta_policy_based_model",
+            confidence_threshold=0.70
+        )
+        print("✅ Enhanced pipeline loaded successfully")
+except Exception as e:
+    print(f"⚠️ Error loading enhanced pipeline: {e}")
+    # Fallback to basic pipeline
+    try:
+        from inference.hybrid_pipeline import ReviewClassificationPipeline
+        pipeline = ReviewClassificationPipeline()
+        print("⚠️ Using fallback pipeline")
+    except Exception as e2:
+        print(f"⚠️ Error loading fallback pipeline: {e2}")
+        pipeline = None
+
 @st.cache_data
 def load_reviews_dataset(uploaded_df=None):
     """Load and cache the reviews dataset"""
@@ -465,27 +375,122 @@ def load_reviews_dataset(uploaded_df=None):
     except Exception as e:
         st.error(f"Error loading dataset: {str(e)}")
         return None
->>>>>>> Stashed changes
 
-def analyze_review_with_ml(review_text, business_type="general"):
+def analyze_review_with_ml(review_text, business_name="Unknown Business"):
+    """Enhanced review analysis using ML model and LLM validation"""
     start_time = time.time()
+    
+    # Try to use the enhanced pipeline first
     try:
-        result = pipeline.classify(review_text)
-
-        quality_score = 90 if result['is_valid'] else 40
-        violations = [] if result['is_valid'] else [result['reason']]
-
-        metadata = {
-            "confidence": result.get("confidence", 0.8),
-            "processing_time": time.time() - start_time,
-            "method": result.get("method", "unknown"),
-            "model_version": "v2.1.3"
+        from inference.enhanced_hybrid_pipeline import EnhancedReviewClassificationPipeline
+        
+        # Use global pipeline if available, otherwise create new one
+        if hasattr(st.session_state, 'enhanced_pipeline') and st.session_state.enhanced_pipeline is not None:
+            pipeline = st.session_state.enhanced_pipeline
+        else:
+            pipeline = EnhancedReviewClassificationPipeline(
+                './models/roberta_policy_based_model', 
+                confidence_threshold=0.70
+            )
+            st.session_state.enhanced_pipeline = pipeline
+        
+        # Run enhanced classification
+        result = pipeline.classify(review_text, business_name)
+        
+        # Convert to app format
+        quality_score = int(result['final_confidence'] * 100)
+        confidence = result['final_confidence']
+        
+        # Determine violations based on BOTH prediction and confidence
+        violations = []
+        is_real = result['final_prediction'] == 'real'
+        
+        # Check for fake content
+        if not is_real:
+            violations.append("Classified as potentially fake")
+        
+        # Check for low confidence/quality regardless of prediction
+        if confidence < 0.50:
+            violations.append("Low confidence prediction")
+        if quality_score < 60:
+            violations.append("Low quality content")
+        if quality_score < 40:
+            violations.append("Very low quality content")
+        
+        processing_time = time.time() - start_time
+        
+        return {
+            'prediction': result['final_prediction'].title(),
+            'confidence': confidence,
+            'quality_score': quality_score,
+            'violations': violations,
+            'processing_time': processing_time,
+            'metadata': {
+                'model_used': 'Enhanced Pipeline (RoBERTa + LLM)',
+                'layers_used': list(result['layers'].keys()),
+                'reasoning': result['reasoning'],
+                'detailed_layers': result['layers']
+            }
         }
-
-        return quality_score, violations, metadata
+        
     except Exception as e:
-        st.error(f"Model inference error: {str(e)}")
-        return None, [], {}
+        print(f"❌ Enhanced pipeline error: {e}")
+        # Fall back to basic analysis if enhanced pipeline fails
+        pass
+    
+    # Fallback to basic rule-based analysis
+    try:
+        word_count = len(review_text.split())
+        char_count = len(review_text)
+        
+        # Basic quality scoring
+        quality_score = 50  # Base score
+        violations = []
+        
+        # Length analysis
+        if word_count < 3:
+            quality_score = 30
+            violations.append("Review too short")
+        elif word_count > 10:
+            quality_score += 20
+        
+        if char_count > 50:
+            quality_score += 15
+            
+        # Simple spam detection
+        if 'buy now' in review_text.lower() or 'click here' in review_text.lower():
+            quality_score -= 25
+            violations.append("Potential spam content")
+        
+        # Ensure score bounds
+        quality_score = max(20, min(95, quality_score))
+        
+        # Calculate confidence
+        confidence = 0.7 + (abs(quality_score - 50) / 100) * 0.2
+        
+        # Metadata
+        metadata = {
+            "confidence": confidence,
+            "processing_time": time.time() - start_time,
+            "method": "basic_rules",
+            "model_version": "v3.0.0-basic",
+            "processing_layers": ["basic_rules"],
+            "llm_used": False,
+            "ml_confidence": None,
+            "word_count": word_count,
+            "char_count": char_count
+        }
+        
+        return quality_score, violations, metadata
+        
+    except Exception as e:
+        print(f"⚠️ Analysis error: {e}")
+        return 50, [f"Analysis error: {str(e)}"], {
+            "confidence": 0.5,
+            "processing_time": time.time() - start_time,
+            "method": "error_fallback",
+            "error": str(e)
+        }
 
 def get_quality_classification(score):
     """Classify quality score with professional categories"""
@@ -497,6 +502,82 @@ def get_quality_classification(score):
         return "Moderate", "score-average"
     else:
         return "Low Quality", "score-poor"
+
+def apply_model_screening(df, text_column, quality_threshold=70, batch_size=50):
+    """
+    Apply ML model screening to filter high-quality reviews
+    """
+    try:
+        if text_column not in df.columns:
+            st.error(f"Text column '{text_column}' not found in dataset")
+            return None
+        
+        # Initialize results
+        screened_reviews = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        total_reviews = len(df)
+        processed = 0
+        
+        # Process in batches to avoid memory issues
+        for i in range(0, total_reviews, batch_size):
+            batch_end = min(i + batch_size, total_reviews)
+            batch_df = df.iloc[i:batch_end]
+            
+            # Process each review in the batch
+            for idx, row in batch_df.iterrows():
+                review_text = str(row[text_column])
+                business_name = str(row.get('StoreId', 'Unknown Business'))
+                
+                # Analyze with ML model
+                result = analyze_review_with_ml(review_text, business_name)
+                
+                # Handle both dictionary (enhanced) and tuple (fallback) returns
+                if isinstance(result, dict):
+                    quality_score = result['quality_score']
+                    violations = result['violations']
+                    metadata = result['metadata']
+                else:
+                    quality_score, violations, metadata = result
+                
+                # Add screening results to the row
+                row_dict = row.to_dict()
+                row_dict['ml_quality_score'] = quality_score if quality_score is not None else 0
+                row_dict['ml_confidence'] = metadata.get('confidence', 0.0) if metadata else 0.0
+                row_dict['ml_violations'] = '; '.join(violations) if violations else 'None'
+                row_dict['ml_method'] = metadata.get('method', 'unknown') if metadata else 'unknown'
+                
+                # Only include if meets quality threshold
+                if quality_score is not None and quality_score >= quality_threshold:
+                    screened_reviews.append(row_dict)
+                
+                processed += 1
+                progress = processed / total_reviews
+                progress_bar.progress(progress)
+                status_text.text(f"Processing review {processed}/{total_reviews} - Quality Score: {quality_score}")
+                
+                # Small delay to show progress
+                time.sleep(0.01)
+        
+        # Create screened dataframe
+        if screened_reviews:
+            screened_df = pd.DataFrame(screened_reviews)
+            st.success(f"Model screening completed! {len(screened_df)} reviews passed quality threshold (≥{quality_threshold})")
+            return screened_df
+        else:
+            st.warning(f"No reviews met the quality threshold of {quality_threshold}")
+            return None
+            
+    except Exception as e:
+        st.error(f"Error during model screening: {str(e)}")
+        return None
+
+# Add to session state initialization
+if 'cleaned_file_path' not in st.session_state:
+    st.session_state.cleaned_file_path = None
+if 'screened_dataset' not in st.session_state:
+    st.session_state.screened_dataset = None
 
 def detect_text_columns(df):
     """Automatically detect potential text columns for review analysis"""
@@ -525,8 +606,13 @@ if 'dataset' not in st.session_state:
     st.session_state.dataset = None
 if 'uploaded_dataset' not in st.session_state:
     st.session_state.uploaded_dataset = None
+if 'sidebar_collapsed' not in st.session_state:
+    st.session_state.sidebar_collapsed = False
 
-# Professional header
+# Main title and header with glowing banner
+st.title("ReviewGuard AI")
+
+# Professional header with TikTok styling
 st.markdown("""
 <div class="tiktok-header">
     <h1 style="font-size: 3.5rem; margin: 0; font-weight: 900; letter-spacing: -2px;">ReviewGuard AI</h1>
@@ -539,62 +625,74 @@ st.markdown("""
 </div>
 """, unsafe_allow_html=True)
 
-# Professional navigation sidebar
-with st.sidebar:
-    st.markdown("""
-    <div style="padding: 1rem 0; text-align: center;">
-        <h2 style="color: #fe2c55; font-weight: 800; margin: 0;">Control Center</h2>
-    </div>
-    """, unsafe_allow_html=True)
+# Professional sidebar - BACKUP METHOD
+try:
+    st.sidebar.title("Control Center")
     
-    navigation = st.selectbox(
+    # Recovery mechanisms in sidebar
+    recovery_col1, recovery_col2 = st.sidebar.columns([1, 1])
+    with recovery_col1:
+        if st.sidebar.button("Refresh", help="Refresh", key="sidebar_refresh"):
+            st.rerun()
+    with recovery_col2:
+        if st.sidebar.button("Reset UI", help="Reset UI", key="ui_reset"):
+            # Clear problematic session state
+            for key in list(st.session_state.keys()):
+                if isinstance(key, str) and ('sidebar' in key.lower() or 'ui' in key.lower()):
+                    try:
+                        del st.session_state[key]
+                    except:
+                        pass
+            st.rerun()
+
+    navigation = st.sidebar.selectbox(
         "Platform Module",
         ["Data Management", "Executive Dashboard", "Live Content Analysis", "Intelligence Analytics"],
         label_visibility="collapsed"
     )
-    
-    st.markdown("---")
-    
+
+    st.sidebar.markdown("---")
+
     # CSV Upload Section in Sidebar
-    st.markdown("**📁 Data Source**")
-    uploaded_file = st.file_uploader(
+    st.sidebar.markdown("**Data Source**")
+    uploaded_file = st.sidebar.file_uploader(
         "Upload CSV Dataset", 
         type=['csv'],
         help="Upload your review dataset for analysis"
     )
-    
+
     if uploaded_file:
-        if st.button("🚀 Process & Load Dataset", use_container_width=True):
+        if st.sidebar.button("Process & Load Dataset", use_container_width=True):
             with st.spinner("Processing uploaded dataset..."):
                 processed_df = process_uploaded_csv(uploaded_file)
                 if processed_df is not None:
                     st.session_state.uploaded_dataset = processed_df
                     st.session_state.dataset = processed_df
-                    st.success("✅ Dataset loaded successfully!")
+                    st.success("Dataset loaded successfully!")
                     st.rerun()
-    
+
     # Show current dataset status
     if st.session_state.dataset is not None:
-        st.success(f"📊 Dataset loaded: {len(st.session_state.dataset):,} records")
+        st.sidebar.success(f"Dataset loaded: {len(st.session_state.dataset):,} records")
     else:
         # Try to load default dataset
         default_df = load_reviews_dataset()
         if default_df is not None:
             st.session_state.dataset = default_df
-            st.info("📄 Using default dataset")
+            st.sidebar.info("Using default dataset")
         else:
-            st.warning("⚠️ No dataset available")
-    
-    st.markdown("---")
-    
-    st.markdown("**AI Model Configuration**")
-    detection_sensitivity = st.slider("Detection Sensitivity", 0.5, 1.0, 0.85, 0.05)
-    policy_strictness = st.radio("Policy Enforcement", ["Standard", "Strict", "Maximum"])
-    
-    st.markdown("---")
-    
-    st.markdown("**Active Protection Modules**")
-    st.markdown("""
+            st.sidebar.warning("No dataset available")
+
+    st.sidebar.markdown("---")
+
+    st.sidebar.markdown("**AI Model Configuration**")
+    detection_sensitivity = st.sidebar.slider("Detection Sensitivity", 0.5, 1.0, 0.85, 0.05)
+    policy_strictness = st.sidebar.radio("Policy Enforcement", ["Standard", "Strict", "Maximum"])
+
+    st.sidebar.markdown("---")
+
+    st.sidebar.markdown("**Active Protection Modules**")
+    st.sidebar.markdown("""
     <div class="status-indicator status-active">
         <span></span> Commercial Detection
     </div>
@@ -608,15 +706,119 @@ with st.sidebar:
         <span></span> Quality Assessment
     </div>
     """, unsafe_allow_html=True)
-    
+
     if ML_MODELS_AVAILABLE:
-        st.success("ML Models: Online")
+        st.sidebar.success("ML Models: Online")
     else:
-        st.warning("ML Models: Placeholder Mode")
+        st.sidebar.warning("ML Models: Placeholder Mode")
+    
+    sidebar_working = True
+
+except Exception as e:
+    # FALLBACK: Main content navigation when sidebar fails
+    sidebar_working = False
+    st.warning("Sidebar unavailable - Using alternative navigation")
+    
+    # ALTERNATIVE METHOD 1: Horizontal tabs in main content
+    st.markdown("---")
+    st.markdown("### Navigation")
+    
+    tab1, tab2, tab3, tab4 = st.tabs([
+        "Data Management", 
+        "Executive Dashboard", 
+        "Live Content Analysis", 
+        "Intelligence Analytics"
+    ])
+    
+    # Store navigation in session state based on tab interaction
+    if 'current_tab' not in st.session_state:
+        st.session_state.current_tab = "Data Management"
+    
+    # Navigation through tabs (we'll handle the content below)
+    navigation = st.session_state.current_tab
+    
+    # Controls in main area
+    st.markdown("---")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    
+    with col1:
+        st.markdown("**Data Source**")
+        uploaded_file = st.file_uploader("Upload CSV Dataset", type=['csv'])
+        if uploaded_file and st.button("Process Dataset"):
+            with st.spinner("Processing..."):
+                processed_df = process_uploaded_csv(uploaded_file)
+                if processed_df is not None:
+                    st.session_state.uploaded_dataset = processed_df
+                    st.session_state.dataset = processed_df
+                    st.success("Dataset loaded!")
+                    st.rerun()
+    
+    with col2:
+        st.markdown("**AI Configuration**")
+        detection_sensitivity = st.slider("Detection Sensitivity", 0.5, 1.0, 0.85, 0.05)
+        policy_strictness = st.radio("Policy Enforcement", ["Standard", "Strict", "Maximum"])
+    
+    with col3:
+        st.markdown("**System Status**")
+        if st.session_state.dataset is not None:
+            st.success(f"Dataset: {len(st.session_state.dataset):,} records")
+        else:
+            st.info("No dataset loaded")
+        
+        if ML_MODELS_AVAILABLE:
+            st.success("ML Models: Online")
+        else:
+            st.warning("ML Models: Placeholder")
+
+# Set navigation based on tab interaction if sidebar failed
+if not sidebar_working:
+    # ALTERNATIVE METHOD 2: Button-based navigation
+    st.markdown("---")
+    st.markdown("### Quick Navigation")
+    nav_col1, nav_col2, nav_col3, nav_col4 = st.columns(4)
+    
+    with nav_col1:
+        if st.button("Data Management", key="nav_data", use_container_width=True):
+            st.session_state.current_tab = "Data Management"
+            navigation = "Data Management"
+            st.rerun()
+    
+    with nav_col2:
+        if st.button("Executive Dashboard", key="nav_exec", use_container_width=True):
+            st.session_state.current_tab = "Executive Dashboard"
+            navigation = "Executive Dashboard"
+            st.rerun()
+    
+    with nav_col3:
+        if st.button("Live Analysis", key="nav_live", use_container_width=True):
+            st.session_state.current_tab = "Live Content Analysis"
+            navigation = "Live Content Analysis"
+            st.rerun()
+    
+    with nav_col4:
+        if st.button("Intelligence Analytics", key="nav_intel", use_container_width=True):
+            st.session_state.current_tab = "Intelligence Analytics"
+            navigation = "Intelligence Analytics"
+            st.rerun()
+    
+    # ALTERNATIVE METHOD 3: Dropdown navigation
+    st.markdown("---")
+    navigation_override = st.selectbox(
+        "Or choose module from dropdown:",
+        ["Data Management", "Executive Dashboard", "Live Content Analysis", "Intelligence Analytics"],
+        index=["Data Management", "Executive Dashboard", "Live Content Analysis", "Intelligence Analytics"].index(st.session_state.current_tab)
+    )
+    
+    if navigation_override != st.session_state.current_tab:
+        st.session_state.current_tab = navigation_override
+        navigation = navigation_override
+        st.rerun()
+    
+    navigation = st.session_state.current_tab
 
 # Main application interface
 if navigation == "Data Management":
-    st.markdown('<div class="section-header">📊 Data Management Center</div>', unsafe_allow_html=True)
+    st.markdown('<div class="section-header">Data Management Center</div>', unsafe_allow_html=True)
     
     # File upload interface
     st.markdown("""
@@ -660,12 +862,12 @@ if navigation == "Data Management":
                     validate_format = st.checkbox("Validate data format", value=True)
                     generate_insights = st.checkbox("Generate data insights", value=True)
                 
-                if st.button("🚀 Process Dataset", type="primary", use_container_width=True):
+                if st.button("Process Dataset", type="primary", use_container_width=True):
                     processed_df = process_uploaded_csv(uploaded_file)
                     if processed_df is not None:
                         st.session_state.uploaded_dataset = processed_df
                         st.session_state.dataset = processed_df
-                        st.success("✅ Dataset processed and loaded successfully!")
+                        st.success("Dataset processed and loaded successfully!")
                         st.balloons()
                         
             except Exception as e:
@@ -753,28 +955,87 @@ if navigation == "Data Management":
         st.dataframe(quality_report, use_container_width=True, height=400)
         
         # Export options
-        st.markdown("**💾 Export Options**")
-        export_col1, export_col2 = st.columns(2)
+        st.markdown("**Export Options**")
+        export_col1, export_col2, export_col3 = st.columns(3)
         
         with export_col1:
-            if st.button("📥 Download Cleaned Dataset", use_container_width=True):
+            st.markdown("**Basic Cleaned Dataset**")
+            if st.session_state.cleaned_file_path and os.path.exists(st.session_state.cleaned_file_path):
+                # Download the cleaned file created by py_script.py
+                with open(st.session_state.cleaned_file_path, 'rb') as f:
+                    st.download_button(
+                        label="Download Cleaned CSV",
+                        data=f.read(),
+                        file_name=f"cleaned_reviews_{int(time.time())}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        help="Dataset cleaned by py_script.py with normalization and deduplication"
+                    )
+            else:
+                # Fallback: generate cleaned CSV from current dataframe
                 csv_buffer = df.to_csv(index=False)
                 st.download_button(
-                    label="Download CSV",
+                    label="Download Current Dataset",
                     data=csv_buffer,
-                    file_name=f"cleaned_reviews_{int(time.time())}.csv",
+                    file_name=f"dataset_{int(time.time())}.csv",
                     mime="text/csv",
-                    use_container_width=True
+                    use_container_width=True,
+                    help="Current dataset in memory"
                 )
         
         with export_col2:
-            if st.button("📊 Generate Analytics Report", use_container_width=True):
+            st.markdown("**Model-Screened Dataset**")
+            
+            # Model screening options
+            text_columns = detect_text_columns(df)
+            if text_columns:
+                selected_text_col = st.selectbox(
+                    "Select text column for screening:",
+                    text_columns,
+                    key="screening_text_col"
+                )
+                
+                quality_threshold = st.slider(
+                    "Quality threshold:",
+                    min_value=50,
+                    max_value=95,
+                    value=75,
+                    step=5,
+                    key="quality_threshold"
+                )
+                
+                if st.button("Screen with ML Model", use_container_width=True):
+                    with st.spinner("Applying ML model screening..."):
+                        screened_df = apply_model_screening(df, selected_text_col, quality_threshold)
+                        if screened_df is not None:
+                            st.session_state.screened_dataset = screened_df
+                            st.success(f"Screening complete! {len(screened_df)} high-quality reviews selected.")
+                
+                # Download screened dataset if available
+                if st.session_state.screened_dataset is not None:
+                    screened_csv = st.session_state.screened_dataset.to_csv(index=False)
+                    st.download_button(
+                        label="Download Screened Dataset",
+                        data=screened_csv,
+                        file_name=f"screened_reviews_{int(time.time())}.csv",
+                        mime="text/csv",
+                        use_container_width=True,
+                        help=f"Reviews that passed ML quality screening (≥{quality_threshold})"
+                    )
+            else:
+                st.info("No text columns detected for ML screening")
+        
+        with export_col3:
+            st.markdown("**Analytics Report**")
+            if st.button("Generate Analytics Report", use_container_width=True):
                 report_data = {
                     'dataset_summary': {
                         'total_records': len(df),
                         'columns': len(df.columns),
                         'completeness': completeness,
-                        'text_columns': text_columns
+                        'text_columns': text_columns,
+                        'cleaned_file_available': st.session_state.cleaned_file_path is not None,
+                        'screened_records': len(st.session_state.screened_dataset) if st.session_state.screened_dataset is not None else 0
                     },
                     'processing_timestamp': datetime.now().isoformat(),
                     'data_quality': quality_report.to_dict()
@@ -785,14 +1046,15 @@ if navigation == "Data Management":
                     data=json.dumps(report_data, indent=2),
                     file_name=f"analytics_report_{int(time.time())}.json",
                     mime="application/json",
-                    use_container_width=True
+                    use_container_width=True,
+                    help="Comprehensive analytics report including cleaning and screening statistics"
                 )
 
 elif navigation == "Executive Dashboard":
     if st.session_state.dataset is None:
         st.markdown("""
         <div class="professional-card">
-            <h4 style="color: #fe2c55; text-align: center;">⚠️ No Dataset Available</h4>
+            <h4 style="color: #fe2c55; text-align: center;">No Dataset Available</h4>
             <p style="text-align: center;">Please upload a CSV file in the <strong>Data Management</strong> section to view analytics.</p>
         </div>
         """, unsafe_allow_html=True)
@@ -952,7 +1214,7 @@ elif navigation == "Executive Dashboard":
 
 elif navigation == "Live Content Analysis":
     if st.session_state.dataset is None:
-        st.warning("⚠️ No dataset loaded. Please upload a CSV file in Data Management first.")
+        st.warning("No dataset loaded. Please upload a CSV file in Data Management first.")
         st.stop()
     
     df = st.session_state.dataset
@@ -971,22 +1233,60 @@ elif navigation == "Live Content Analysis":
             <h4 style="color: #25f4ee; margin-bottom: 1rem;">Content Input</h4>
         """, unsafe_allow_html=True)
         
-        # Quick sample selection
+        # Quick sample selection with predefined test cases
+        st.markdown("**Dataset Samples for Testing:**")
+        
+        # Predefined samples that showcase different aspects of the enhanced pipeline
+        predefined_samples = [
+            {
+                "text": "This restaurant has amazing food and excellent service. The atmosphere is perfect and I highly recommend it to everyone!",
+                "label": "High Quality Positive",
+                "expected": "Should trigger ML model only (high confidence)"
+            },
+            {
+                "text": "good food",
+                "label": "Low Quality Brief", 
+                "expected": "Should trigger LLM validation (low confidence)"
+            },
+            {
+                "text": "The service was terrible and the food was cold. Very disappointing experience, would not recommend.",
+                "label": "Detailed Negative",
+                "expected": "Should be classified as real (authentic negative)"
+            },
+            {
+                "text": "BUY NOW! CLICK HERE FOR AMAZING DEALS! Limited time offer, guaranteed satisfaction!",
+                "label": "Obvious Spam",
+                "expected": "Should be caught by rule-based filter immediately"
+            }
+        ]
+        
+        sample_cols = st.columns(2)
+        for i, sample_data in enumerate(predefined_samples):
+            col_idx = i % 2
+            with sample_cols[col_idx]:
+                # Create a more informative button with preview
+                preview_text = sample_data["text"][:40] + "..." if len(sample_data["text"]) > 40 else sample_data["text"]
+                button_label = f"{sample_data['label']}"
+                
+                if st.button(button_label, key=f"sample_{i}", use_container_width=True, 
+                           help=f"Preview: {preview_text}\nExpected: {sample_data['expected']}"):
+                    st.session_state.content_input = sample_data["text"]
+                    st.rerun()
+        
+        # Also include dataset samples if available
         if text_column and df is not None:
-            st.markdown("**Dataset Samples for Testing:**")
             available_samples = df[text_column].dropna()
             if len(available_samples) > 0:
-                samples = available_samples.sample(min(4, len(available_samples))).tolist()
+                st.markdown("**Additional Dataset Samples:**")
+                random_samples = available_samples.sample(min(2, len(available_samples))).tolist()
                 
-                sample_cols = st.columns(2)
-                for i, sample in enumerate(samples[:4]):
-                    col_idx = i % 2
-                    with sample_cols[col_idx]:
-                        preview = (sample[:45] + "...") if len(sample) > 45 else sample
-                        if st.button(f"Load Sample {i+1}", key=f"sample_{i}", use_container_width=True):
+                dataset_cols = st.columns(2)
+                for i, sample in enumerate(random_samples):
+                    with dataset_cols[i % 2]:
+                        preview = (sample[:35] + "...") if len(sample) > 35 else sample
+                        if st.button(f"Dataset Sample {i+1}", key=f"dataset_sample_{i}", use_container_width=True):
                             st.session_state.content_input = sample
-            else:
-                st.warning("No text samples available in the current dataset")
+                            st.rerun()
         
         # Main content input
         review_input = st.text_area(
@@ -998,14 +1298,21 @@ elif navigation == "Live Content Analysis":
         )
         
         # Analysis configuration
-        config_col1, config_col2 = st.columns(2)
+        config_col1, config_col2, config_col3 = st.columns(3)
         with config_col1:
+            business_name = st.text_input(
+                "Business Name", 
+                value="Unknown Business",
+                placeholder="Enter business name..."
+            )
+        
+        with config_col2:
             business_category = st.selectbox(
                 "Business Category", 
                 ["Restaurant", "Hotel & Hospitality", "Retail & Shopping", "Professional Services", "Healthcare", "Other"]
             )
         
-        with config_col2:
+        with config_col3:
             analysis_depth = st.selectbox(
                 "Analysis Mode",
                 ["Standard Analysis", "Deep Learning Analysis", "Rapid Screening"]
@@ -1020,7 +1327,7 @@ elif navigation == "Live Content Analysis":
         """, unsafe_allow_html=True)
         
         if st.button("Execute Analysis", use_container_width=True, key="analyze_btn"):
-            if review_input.strip():
+            if review_input and review_input.strip():
                 
                 # Professional loading animation
                 with st.spinner("AI model processing content..."):
@@ -1029,26 +1336,57 @@ elif navigation == "Live Content Analysis":
                         time.sleep(0.01)
                         progress_bar.progress(i + 1)
                     
-                    # Run your ML model analysis
-                    quality_score, violations, model_meta = analyze_review_with_ml(
+                    # Run your enhanced ML model analysis with LLM support
+                    result = analyze_review_with_ml(
                         review_input, 
-                        business_category.lower()
+                        business_name
                     )
+                    
+                    # Handle both dictionary (enhanced) and tuple (fallback) returns
+                    if isinstance(result, dict):
+                        quality_score = result['quality_score']
+                        violations = result['violations']
+                        model_meta = result['metadata']
+                    else:
+                        quality_score, violations, model_meta = result
                     
                     if quality_score is not None:
                         quality_level, score_class = get_quality_classification(quality_score)
                         
                         # Store analysis session
+                        content_preview = review_input[:80] + "..." if len(review_input) > 80 else review_input
+                        
+                        # Extract confidence and processing time based on return format
+                        if isinstance(result, dict):
+                            # Enhanced pipeline format
+                            confidence = result.get('confidence', quality_score / 100.0)
+                            processing_time = result.get('processing_time', 0.0)
+                            model_version = result.get('metadata', {}).get('model_used', 'Enhanced Pipeline')
+                            llm_used = 'LLM' in result.get('metadata', {}).get('reasoning', '')
+                            processing_layers = result.get('metadata', {}).get('layers_used', [])
+                            method = 'enhanced_pipeline'
+                        else:
+                            # Fallback format
+                            confidence = model_meta.get('confidence', quality_score / 100.0)
+                            processing_time = model_meta.get('processing_time', 0.0)
+                            model_version = model_meta.get('model_version', 'v3.0.0-basic')
+                            llm_used = model_meta.get('llm_used', False)
+                            processing_layers = model_meta.get('processing_layers', [])
+                            method = model_meta.get('method', 'basic_rules')
+                        
                         session_data = {
-                            'content_preview': review_input[:80] + "..." if len(review_input) > 80 else review_input,
+                            'content_preview': content_preview,
                             'quality_score': quality_score,
                             'quality_level': quality_level,
                             'violations': violations,
-                            'confidence': model_meta['confidence'],
-                            'analysis_time': model_meta['processing_time'],
+                            'confidence': confidence,
+                            'analysis_time': processing_time,
                             'business_type': business_category,
                             'timestamp': datetime.now(),
-                            'model_version': model_meta.get('model_version', 'v2.1.3')
+                            'model_version': model_version,
+                            'llm_used': llm_used,
+                            'processing_layers': processing_layers,
+                            'method': method
                         }
                         st.session_state.analysis_sessions.append(session_data)
                         st.session_state.processed_count += 1
@@ -1063,9 +1401,70 @@ elif navigation == "Live Content Analysis":
                         </div>
                         """, unsafe_allow_html=True)
                         
+                        # Enhanced processing method display
+                        method_display = model_meta.get('method', 'unknown')
+                        processing_layers = model_meta.get('processing_layers', [])
+                        
+                        if model_meta.get('llm_used', False):
+                            st.markdown("""
+                            <div style="background: linear-gradient(90deg, #fe2c55, #ff6b6b); padding: 0.5rem; border-radius: 8px; margin: 1rem 0; text-align: center;">
+                                <strong>🧠 LLM-Enhanced Analysis</strong>
+                            </div>
+                            """, unsafe_allow_html=True)
+                            
+                            # Show ML vs LLM comparison if available
+                            ml_confidence = None
+                            agreement = None
+                            
+                            if isinstance(result, dict):
+                                # Enhanced pipeline format - extract from detailed layers
+                                detailed_layers = result.get('metadata', {}).get('detailed_layers', {})
+                                if 'ml_model' in detailed_layers:
+                                    ml_confidence = detailed_layers['ml_model'].get('confidence', 0.0)
+                                if 'llm_validation' in detailed_layers:
+                                    llm_pred = detailed_layers['llm_validation'].get('prediction', '')
+                                    ml_pred = detailed_layers.get('ml_model', {}).get('prediction', '')
+                                    agreement = 'agreement' if llm_pred == ml_pred else 'disagreement'
+                            else:
+                                # Fallback format
+                                ml_confidence = model_meta.get('ml_confidence')
+                                agreement = model_meta.get('agreement')
+                            
+                            if ml_confidence and agreement:
+                                agreement_emoji = "✅" if agreement == 'agreement' else "⚠️"
+                                st.markdown(f"""
+                                <div style="background: rgba(40,40,40,0.5); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
+                                    <strong>ML vs LLM Analysis:</strong><br>
+                                    • ML Confidence: {ml_confidence:.1%}<br>
+                                    • LLM Prediction: {result.get('metadata', {}).get('detailed_layers', {}).get('llm_validation', {}).get('prediction', 'N/A') if isinstance(result, dict) else model_meta.get('llm_prediction', 'N/A')}<br>
+                                    • Agreement: {agreement_emoji} {agreement.title()}
+                                </div>
+                                """, unsafe_allow_html=True)
+                        else:
+                            st.markdown(f"""
+                            <div style="background: rgba(0,150,255,0.2); padding: 0.5rem; border-radius: 8px; margin: 1rem 0; text-align: center;">
+                                <strong>🤖 {method_display.replace('_', ' ').title()} Analysis</strong>
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
+                        # Processing layers visualization
+                        if processing_layers:
+                            layer_display = " → ".join([layer.replace('_', ' ').title() for layer in processing_layers])
+                            st.markdown(f"""
+                            <div style="font-size: 0.9rem; color: #888; text-align: center; margin: 0.5rem 0;">
+                                Processing Path: {layer_display}
+                            </div>
+                            """, unsafe_allow_html=True)
+                        
                         # Model confidence indicator
                         st.markdown("**AI Confidence Level**")
-                        confidence_pct = model_meta['confidence']
+                        
+                        # Extract confidence based on return format
+                        if isinstance(result, dict):
+                            confidence_pct = result.get('confidence', quality_score / 100.0)
+                        else:
+                            confidence_pct = model_meta.get('confidence', quality_score / 100.0)
+                            
                         st.progress(confidence_pct, text=f"{confidence_pct:.1%} confidence")
                         
                         # Policy compliance results
@@ -1078,7 +1477,7 @@ elif navigation == "Live Content Analysis":
                                 </div>
                                 """, unsafe_allow_html=True)
                         else:
-                            st.success("✅ All policy requirements met")
+                            st.success("All policy requirements met")
                         
                         # Technical analysis breakdown
                         st.markdown("**Model Performance Metrics**")
@@ -1093,16 +1492,47 @@ elif navigation == "Live Content Analysis":
                         for metric_name, score in analysis_metrics.items():
                             st.progress(score, text=f"{metric_name}: {score:.1%}")
                         
-                        # Processing metadata
-                        st.markdown(f"""
+                        # Enhanced processing metadata
+                        # Extract processing time based on format
+                        if isinstance(result, dict):
+                            processing_time_display = result.get('processing_time', 0.0)
+                            model_version_display = result.get('metadata', {}).get('model_used', 'Enhanced Pipeline')
+                        else:
+                            processing_time_display = model_meta.get('processing_time', 0.0)
+                            model_version_display = model_meta.get('model_version', 'v3.0.0-basic')
+                            
+                        metadata_content = f"""
                         <div style="background: rgba(40,40,40,0.5); padding: 1rem; border-radius: 8px; margin: 1rem 0;">
                             <small>
-                                <strong>Processing Time:</strong> {model_meta['processing_time']:.3f}s<br>
-                                <strong>Model Version:</strong> {model_meta.get('model_version', 'v2.1.3')}<br>
-                                <strong>Analysis Mode:</strong> {analysis_depth}
+                                <strong>Processing Time:</strong> {processing_time_display:.3f}s<br>
+                                <strong>Model Version:</strong> {model_version_display}<br>
+                                <strong>Analysis Mode:</strong> {analysis_depth}<br>
+                                <strong>Business Context:</strong> {business_name} ({business_category})
+                        """
+                        
+                        # Add LLM-specific metadata if available
+                        llm_used_display = False
+                        if isinstance(result, dict):
+                            llm_used_display = 'llm_validation' in result.get('metadata', {}).get('layers_used', [])
+                        else:
+                            llm_used_display = model_meta.get('llm_used', False)
+                            
+                        if llm_used_display:
+                            metadata_content += f"""<br>
+                                <strong>LLM Validation:</strong> ✅ Active<br>
+                                <strong>Processing Layers:</strong> {len(model_meta.get('processing_layers', []))} layers
+                            """
+                        else:
+                            metadata_content += f"""<br>
+                                <strong>LLM Validation:</strong> Not triggered (high ML confidence)
+                            """
+                        
+                        metadata_content += """
                             </small>
                         </div>
-                        """, unsafe_allow_html=True)
+                        """
+                        
+                        st.markdown(metadata_content, unsafe_allow_html=True)
                     else:
                         st.error("Analysis failed. Please check your model configuration.")
             else:
@@ -1125,7 +1555,7 @@ elif navigation == "Live Content Analysis":
                     if session['violations']:
                         st.markdown(f"**Issues Detected:** {', '.join(session['violations'])}")
                     else:
-                        st.markdown("**Status:** ✅ Policy compliant")
+                        st.markdown("**Status:** Policy compliant")
                 
                 with col2:
                     st.markdown(f"**Score:** {session['quality_score']}/100")
@@ -1134,7 +1564,7 @@ elif navigation == "Live Content Analysis":
 
     # Batch analysis option
     if text_columns:
-        st.markdown('<div class="section-header">🔄 Batch Analysis</div>', unsafe_allow_html=True)
+        st.markdown('<div class="section-header">Batch Analysis</div>', unsafe_allow_html=True)
         
         batch_col1, batch_col2 = st.columns([2, 1])
         
@@ -1149,33 +1579,70 @@ elif navigation == "Live Content Analysis":
             with analysis_options_col2:
                 sampling_method = st.selectbox("Sampling method", ["Random", "First N records", "Last N records"])
             
-            if st.button("🚀 Start Batch Analysis", type="primary", use_container_width=True):
-                # Sample data based on method
-                if sampling_method == "Random":
-                    sample_df = df.sample(n=sample_size)
-                elif sampling_method == "First N records":
-                    sample_df = df.head(sample_size)
-                else:  # Last N records
-                    sample_df = df.tail(sample_size)
-                
-                # Progress tracking
-                progress_bar = st.progress(0)
-                status_placeholder = st.empty()
-                
-                batch_results = []
-                
-                for idx, (_, row) in enumerate(sample_df.iterrows()):
-                    review_text = str(row[selected_column])
+            if st.button("Start Batch Analysis", type="primary", use_container_width=True):
+                if selected_column is None:
+                    st.error("Please select a text column for analysis")
+                else:
+                    # Sample data based on method
+                    if sampling_method == "Random":
+                        sample_df = df.sample(n=sample_size)
+                    elif sampling_method == "First N records":
+                        sample_df = df.head(sample_size)
+                    else:  # Last N records
+                        sample_df = df.tail(sample_size)
                     
-                    # Update progress
-                    progress = (idx + 1) / len(sample_df)
-                    progress_bar.progress(progress)
-                    status_placeholder.text(f"Processing review {idx + 1}/{len(sample_df)}")
+                    # Progress tracking
+                    progress_bar = st.progress(0)
+                    status_placeholder = st.empty()
                     
-                    # Analyze review
-                    quality_score, violations, metadata = analyze_review_with_ml(review_text)
+                    batch_results = []
                     
-                    if quality_score is not None:
+                    for idx, (_, row) in enumerate(sample_df.iterrows()):
+                        try:
+                            if selected_column in row.index:
+                                cell_value = row[selected_column]
+                                # Use try/except for NaN check to avoid pandas boolean series issues
+                                try:
+                                    # Simple string conversion, skip if empty/null
+                                    review_text = str(cell_value).strip()
+                                    if not review_text or review_text.lower() in ['nan', 'none', '']:
+                                        continue
+                                except Exception:
+                                    continue
+                            else:
+                                continue  # Skip if column doesn't exist
+                            
+                            # Update progress
+                            progress = (idx + 1) / len(sample_df)
+                            progress_bar.progress(progress)
+                            status_placeholder.text(f"Processing review {idx + 1}/{len(sample_df)}")
+                            
+                            # Analyze review
+                            result = analyze_review_with_ml(review_text)
+                            
+                            # Handle both dictionary (enhanced) and tuple (fallback) returns
+                            if isinstance(result, dict):
+                                quality_score = result['quality_score']
+                                violations = result['violations']
+                                metadata = result['metadata']
+                            else:
+                                quality_score, violations, metadata = result
+                            
+                            if quality_score is not None:
+                                batch_results.append({
+                                    'review_id': f'REV_{idx+1:03d}',
+                                    'review_text': review_text[:100] + '...' if len(review_text) > 100 else review_text,
+                                    'quality_score': quality_score,
+                                    'is_valid': len(violations) == 0,
+                                    'violations': ', '.join(violations) if violations else 'None',
+                                    'confidence': metadata.get('confidence', 0),
+                                    'processing_time': metadata.get('processing_time', 0),
+                                    'method': metadata.get('method', 'unknown'),
+                                    'llm_used': metadata.get('llm_used', False)
+                                })
+                        except Exception as e:
+                            st.warning(f"Error processing row {idx + 1}: {str(e)}")
+                            continue
                         batch_results.append({
                             'Review_ID': idx + 1,
                             'Quality_Score': quality_score,
@@ -1188,44 +1655,46 @@ elif navigation == "Live Content Analysis":
                     # Small delay to show progress
                     time.sleep(0.05)
                 
-                # Display batch results
-                if batch_results:
-                    results_df = pd.DataFrame(batch_results)
-                    
-                    st.success(f"✅ Batch analysis completed! {len(batch_results)} reviews processed.")
-                    
-                    # Summary metrics
-                    summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
-                    
-                    with summary_col1:
-                        avg_score = results_df['Quality_Score'].mean()
-                        st.metric("Average Quality Score", f"{avg_score:.1f}")
-                    
-                    with summary_col2:
-                        high_quality = len(results_df[results_df['Quality_Score'] >= 85])
-                        st.metric("High Quality Reviews", f"{high_quality} ({high_quality/len(results_df)*100:.1f}%)")
-                    
-                    with summary_col3:
-                        total_violations = results_df['Violations_Count'].sum()
-                        st.metric("Total Violations", total_violations)
-                    
-                    with summary_col4:
-                        avg_confidence = results_df['Confidence'].mean()
-                        st.metric("Average Confidence", f"{avg_confidence:.1%}")
-                    
-                    # Results table
-                    st.markdown("**📊 Detailed Results**")
-                    st.dataframe(results_df, use_container_width=True, height=300)
-                    
-                    # Download results
-                    csv_results = results_df.to_csv(index=False)
-                    st.download_button(
-                        label="📥 Download Batch Analysis Results",
-                        data=csv_results,
-                        file_name=f"batch_analysis_{int(time.time())}.csv",
-                        mime="text/csv",
-                        use_container_width=True
-                    )
+                    # Display batch results
+                    if batch_results:
+                        results_df = pd.DataFrame(batch_results)
+                        
+                        st.success(f"Batch analysis completed! {len(batch_results)} reviews processed.")
+                        
+                        # Summary metrics
+                        summary_col1, summary_col2, summary_col3, summary_col4 = st.columns(4)
+                        
+                        with summary_col1:
+                            avg_score = results_df['Quality_Score'].mean()
+                            st.metric("Average Quality Score", f"{avg_score:.1f}")
+                        
+                        with summary_col2:
+                            high_quality = len(results_df[results_df['Quality_Score'] >= 85])
+                            st.metric("High Quality Reviews", f"{high_quality} ({high_quality/len(results_df)*100:.1f}%)")
+                        
+                        with summary_col3:
+                            total_violations = results_df['Violations_Count'].sum()
+                            st.metric("Total Violations", total_violations)
+                        
+                        with summary_col4:
+                            avg_confidence = results_df['Confidence'].mean()
+                            st.metric("Average Confidence", f"{avg_confidence:.1%}")
+                        
+                        # Results table
+                        st.markdown("**📊 Detailed Results**")
+                        st.dataframe(results_df, use_container_width=True, height=300)
+                        
+                        # Download results
+                        csv_results = results_df.to_csv(index=False)
+                        st.download_button(
+                            label="Download Batch Analysis Results",
+                            data=csv_results,
+                            file_name=f"batch_analysis_{int(time.time())}.csv",
+                            mime="text/csv",
+                            use_container_width=True
+                        )
+                    else:
+                        st.warning("No results to display. Please check your data and try again.")
         
         with batch_col2:
             st.markdown("**⚡ Batch Processing Info**")
@@ -1249,7 +1718,7 @@ elif navigation == "Live Content Analysis":
 
 elif navigation == "Intelligence Analytics":
     if st.session_state.dataset is None:
-        st.warning("⚠️ No dataset loaded. Please upload a CSV file in Data Management first.")
+        st.warning("No dataset loaded. Please upload a CSV file in Data Management first.")
         st.stop()
     
     df = st.session_state.dataset
