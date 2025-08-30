@@ -18,7 +18,7 @@ def main():
     print(f"✅ Training completed in {(end_time - start_time)/60:.2f} minutes")
 
     trainer.save_model("./models/final_model")
-    if hasattr(trainer, 'tokenizer'):
+    if hasattr(trainer, 'tokenizer') and trainer.tokenizer is not None:
         trainer.tokenizer.save_pretrained("./models/final_model")
     print("✅ Model saved to ./models/final_model")
 
