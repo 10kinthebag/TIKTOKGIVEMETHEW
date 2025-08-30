@@ -19,8 +19,6 @@ ad_pattern = re.compile(
     r"|\b(?:hire|job|employment|work opportunity)\b"
     r"|(?:dm me|message me|contact me)"
     r"|\b(?:affiliate|sponsored|partnership|referral)\b"
-    r"|\b(?:subscribe|follow me|like and share)\b"
-    r"|\b(?:my business|my company|my store|my website)\b"
     r")",
     re.IGNORECASE
 )
@@ -56,20 +54,16 @@ def detect_rant_without_visit(text: str) -> bool:
 
 def detect_short_review(text: str, min_words: int = 3) -> bool:
     
-    return len(text.split()) < min_words
+    return len(text.split()) < min_words and not any(w in text.lower() for w in sentiment_words)
 
 def detect_spam_content(text: str) -> bool:
-    """Enhanced spam detection focusing on keyboard patterns and gibberish"""
+
     text_lower = text.lower()
     
     spam_patterns = [
         r'qwerty|asdfgh|zxcvbn',  # keyboard rows
-        r'abcdef|123456|qazwsx',  # sequential patterns
-        r'[bcdfghjklmnpqrstvwxyz]{6,}',  # long consonant sequences
-        r'[aeiou]{5,}',  # excessive vowels
         r'(.)\1{4,}',  # same character repeated 5+ times
         r'^[^aeiou\s]{10,}$',  # words with no vowels (likely gibberish)
-        r'^\d+$',  # only numbers
         r'^[^\w\s]+$',  # only special characters
     ]
     
@@ -78,6 +72,15 @@ def detect_spam_content(text: str) -> bool:
             return True
     
     return False
+
+# Semantic Relevancy 
+# embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
+
+# def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
+#     emb_review = embedding_model.encode(text, convert_to_tensor=True)
+#     emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
+#     similarity = util.cos_sim(emb_review, emb_location).item()
+#     return similarity < 0.2 # threshold
 
 def detect_image_relevance_url(url: str, model) -> bool:
 
@@ -120,9 +123,12 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
         df['rant_flag'] = df['text'].apply(detect_rant_without_visit)
         df['spam_flag'] = df['text'].apply(detect_spam_content)
         df['short_review_flag'] = df['text'].apply(detect_short_review)
-    
+
         flags_created += ['ad_flag', 'rant_flag', 'spam_flag', 'short_review_flag']
 
+    df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
+                                 'irrelevant_flag_semantic','short_review_flag', 
+                                 'spam_flag', 'contradiction_flag']].any(axis=1)
     model = load_model()
     if photo_col in df.columns:
         def detect_image(photo):
@@ -169,7 +175,7 @@ def main(input_csv: str):
     filtered_df = filter_dataset(df, flags)
 
     os.makedirs("data/filteredData", exist_ok=True)
-    output_file = os.path.join("data/filteredData", f"cleaned_reviews_{int(time.time())}.csv")
+    output_file = os.path.join("data/filteredData", f"filtered_{int(time.time())}.csv")
     filtered_df.to_csv(output_file, index=False)
 
     print(f"Original dataset size: {len(df)}")

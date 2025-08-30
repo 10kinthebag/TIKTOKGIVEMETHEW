@@ -1,6 +1,6 @@
 SHELL := /bin/zsh
 
-.PHONY: help env install data_prep tokenize tokenize_hybrid tokenize_ground_truth tokenize_weighted train train_progressive evaluate test api streamlit demo quantize all
+.PHONY: help env install data_prep tokenize tokenize_hybrid tokenize_ground_truth tokenize_weighted train train_roberta train_progressive evaluate test api streamlit demo quantize test_roberta test_interactive test_compare test_all all
 
 help:
 	@echo "Training Data Options:"
@@ -10,13 +10,20 @@ help:
 	@echo "make tokenize_weighted       # tokenize with weighted approach"
 	@echo ""
 	@echo "Training Options:"
-	@echo "make train                   # standard training"
+	@echo "make train_roberta           # train RoBERTa model with policy data"
+	@echo "make train                   # standard training (legacy)"
 	@echo "make train_progressive       # progressive training (ground truth → pseudo)"
 	@echo ""
-	@echo "Testing Trained Model:"
-	@echo "make test_model              # quick test of trained model"
-	@echo "make demo_model              # interactive demo with trained model"
-	@echo "make use_model               # example usage of trained model"
+	@echo "Testing RoBERTa Model:"
+	@echo "make test_roberta            # quick test of RoBERTa model"
+	@echo "make test_interactive        # interactive testing of RoBERTa model"
+	@echo "make test_compare            # compare old vs new model performance"
+	@echo "make test_all                # run all testing methods"
+	@echo ""
+	@echo "Legacy Testing:"
+	@echo "make test_model              # quick test of old trained model"
+	@echo "make demo_model              # interactive demo with old trained model"
+	@echo "make use_model               # example usage of old trained model"
 	@echo ""
 	@echo "Other Commands:"
 	@echo "make env                     # create & activate venv, install deps"
@@ -59,25 +66,51 @@ tokenize_weighted:
 	source nlp_env/bin/activate && \
 	python training_scripts/weighted_tokenization.py
 
+# RoBERTa Training Commands
+train_roberta:
+	@echo "🚀 Training RoBERTa Model with Policy Data"
+	source nlp_env/bin/activate && \
+	python training_scripts/policy_based_training.py --strategy mixed
+
 train_progressive:
 	source nlp_env/bin/activate && \
 	python training_scripts/progressive_training.py
 
+# RoBERTa Model Testing Commands
+test_roberta:
+	@echo "🚀 Quick RoBERTa Model Test"
+	source nlp_env/bin/activate && \
+	python testing/test_model.py --mode batch
+
+test_interactive:
+	@echo "🎯 Interactive RoBERTa Testing"
+	source nlp_env/bin/activate && \
+	python testing/test_model.py --mode interactive
+
+test_compare:
+	@echo "📊 Comparing Model Performance"
+	source nlp_env/bin/activate && \
+	python inference/compare_models.py
+
+test_all: test_compare test_roberta
+	@echo "✅ All tests completed!"
+
+# Legacy Model Testing Commands
 test_model:
 	source nlp_env/bin/activate && \
-	python quick_test_model.py
+	python testing/quick_test_model.py
 
 demo_model:
 	source nlp_env/bin/activate && \
-	python hybrid_pipeline/demo_interface.py
+	python api/demo_interface.py
 
 use_model:
 	source nlp_env/bin/activate && \
-	python use_trained_model.py
+	python inference/use_trained_model.py
 
 train:
 	source nlp_env/bin/activate && \
-	python -c "from training_scripts.trainer_setup import get_trainer; t=get_trainer(); t.train(); t.save_model('./final_model'); t.tokenizer.save_pretrained('./final_model')"
+	python -c "from training_scripts.trainer_setup import get_trainer; t=get_trainer(); t.train(); t.save_model('./models/final_model'); t.tokenizer.save_pretrained('./models/final_model')"
 
 evaluate:
 	source nlp_env/bin/activate && \
@@ -85,19 +118,19 @@ evaluate:
 
 test:
 	source nlp_env/bin/activate && \
-	PYTHONPATH=. python -m hybrid_pipeline.pipeline_testing
+	PYTHONPATH=. python -m inference.pipeline_testing
 
 api:
 	source nlp_env/bin/activate && \
-	python hybrid_pipeline/api_interface.py
+	python api/api_interface.py
 
 streamlit:
 	source nlp_env/bin/activate && \
-	streamlit run hybrid_pipeline/app.py
+	streamlit run api/app.py
 
 demo:
 	source nlp_env/bin/activate && \
-	python hybrid_pipeline/demo_interface.py
+	python api/demo_interface.py
 
 quantize:
 	source nlp_env/bin/activate && \

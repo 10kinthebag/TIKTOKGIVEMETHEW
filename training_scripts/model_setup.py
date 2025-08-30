@@ -5,16 +5,29 @@ from transformers import (
     Trainer
 )
 
-# Choose model
-MODEL_NAME = "distilbert-base-uncased"  # Fast and efficient
-# Alternative: "bert-base-uncased" (more accurate but slower)
+# Choose model - RoBERTa-base for superior performance 
+MODEL_NAME = "roberta-base"  # Much more accurate than DistilBERT, stable and reliable
+# Previous: "distilbert-base-uncased" (faster but less accurate)
+# RoBERTa advantages: Better pre-training, no NSP task, optimized training procedure
 
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-model = AutoModelForSequenceClassification.from_pretrained(
-    MODEL_NAME, 
-    num_labels=2,  # binary classification
-    id2label={0: "invalid", 1: "valid"},
-    label2id={"invalid": 0, "valid": 1}
-)
 
-print("✅ Model and tokenizer loaded successfully")
+def get_model():
+    """Get the configured RoBERTa model for sequence classification."""
+    model = AutoModelForSequenceClassification.from_pretrained(
+        MODEL_NAME, 
+        num_labels=2,  # binary classification
+        id2label={0: "invalid", 1: "valid"},
+        label2id={"invalid": 0, "valid": 1}
+    )
+    return model
+
+def get_tokenizer():
+    """Get the RoBERTa tokenizer."""
+    return tokenizer
+
+# Initialize model for backward compatibility
+model = get_model()
+
+print("✅ RoBERTa-base model and tokenizer loaded successfully")
+print("🚀 Upgraded to powerful RoBERTa model - much better than DistilBERT!")

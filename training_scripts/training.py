@@ -17,10 +17,10 @@ def main():
     end_time = time.time()
     print(f"✅ Training completed in {(end_time - start_time)/60:.2f} minutes")
 
-    trainer.save_model("./final_model")
-    if trainer.tokenizer:
-        trainer.tokenizer.save_pretrained("./final_model")
-    print("✅ Model saved to ./final_model")
+    trainer.save_model("./models/final_model")
+    if hasattr(trainer, 'tokenizer'):
+        trainer.tokenizer.save_pretrained("./models/final_model")
+    print("✅ Model saved to ./models/final_model")
 
 
 if __name__ == "__main__":

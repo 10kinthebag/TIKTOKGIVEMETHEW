@@ -3,7 +3,7 @@ import pandas as pd
 from transformers import AutoTokenizer
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "roberta-base"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 
@@ -13,26 +13,7 @@ def tokenize_function(examples):
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=256,
-    )
-
-
-from datasets import Dataset
-import pandas as pd
-from transformers import AutoTokenizer
-
-
-MODEL_NAME = "distilbert-base-uncased"
-tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
-
-
-def tokenize_function(examples):
-    """Tokenize the input texts for transformer models."""
-    return tokenizer(
-        examples["text"],
-        truncation=True,
-        padding="max_length",
-        max_length=256,
+        max_length=512,  # DeBERTa-v3 can handle longer sequences better
     )
 
 
@@ -42,6 +23,7 @@ def load_data(data_source="hybrid"):
     - 'pseudo': Only pseudo-labeled data
     - 'ground_truth': Only ground truth data  
     - 'hybrid': Both datasets combined
+    - 'policy': Use policy module filtered data (recommended)
     """
     if data_source == "pseudo":
         print("📊 Loading pseudo-labeled data only...")
@@ -52,6 +34,12 @@ def load_data(data_source="hybrid"):
         print("📊 Loading ground truth data only...")
         df = pd.read_csv("data/groundTruthData/reviews_ground_truth.csv")
         df['label'] = df['true_label']
+        
+    elif data_source == "policy":
+        print("🎯 Loading policy-based filtered data (recommended)...")
+        # Import and use the policy-based loading function
+        from training_scripts.policy_based_training import load_policy_based_data
+        df = load_policy_based_data()
         
     elif data_source == "hybrid":
         print("📊 Loading hybrid dataset (ground truth + pseudo labels)...")
@@ -76,7 +64,7 @@ def load_data(data_source="hybrid"):
         print(f"   - Total: {len(df)} samples")
         
     else:
-        raise ValueError("data_source must be 'pseudo', 'ground_truth', or 'hybrid'")
+        raise ValueError("data_source must be 'pseudo', 'ground_truth', 'policy', or 'hybrid'")
     
     return df
 

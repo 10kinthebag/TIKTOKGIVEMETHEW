@@ -10,7 +10,7 @@ import torch
 import numpy as np
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "roberta-base"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 
@@ -20,7 +20,7 @@ def tokenize_function(examples):
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=256,
+        max_length=512,  # DeBERTa-v3 can handle longer sequences better
     )
 
 
@@ -62,14 +62,19 @@ class WeightedTrainer(Trainer):
         super().__init__(*args, **kwargs)
         self.sample_weights = sample_weights
     
-    def compute_loss(self, model, inputs, return_outputs=False):
+    def compute_loss(self, model, inputs, return_outputs=False, num_items_in_batch=None):
         labels = inputs.get("labels")
         outputs = model(**inputs)
-        logits = outputs.get('logits')
+        logits = outputs.logits if hasattr(outputs, 'logits') else outputs.get('logits')
+        
+        if logits is None or labels is None:
+            raise ValueError("Missing logits or labels in compute_loss")
         
         # Compute weighted loss
         loss_fct = torch.nn.CrossEntropyLoss(reduction='none')
-        loss = loss_fct(logits.view(-1, self.model.config.num_labels), labels.view(-1))
+        # Use 2 for binary classification (we know this from the model setup)
+        num_labels = getattr(model.config, 'num_labels', 2)
+        loss = loss_fct(logits.view(-1, num_labels), labels.view(-1))
         
         if self.sample_weights is not None:
             # Apply sample weights

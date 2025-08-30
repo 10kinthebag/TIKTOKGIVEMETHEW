@@ -3,7 +3,7 @@ from transformers import AutoModelForSequenceClassification
 import os
 
 
-def quantize_model(model_path="./final_model"):
+def quantize_model(model_path="./models/final_model"):
     """Attempt to quantize model for faster CPU inference."""
     try:
         print("🔄 Loading model for quantization...")
@@ -42,7 +42,7 @@ def quantize_model(model_path="./final_model"):
         return None
 
 
-def alternative_optimization(model_path="./final_model"):
+def alternative_optimization(model_path="./models/final_model"):
     """Alternative optimization methods when quantization isn't available."""
     try:
         print("🔄 Attempting JIT compilation...")

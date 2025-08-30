@@ -10,7 +10,7 @@ import pandas as pd
 from training_scripts.metrics import compute_metrics
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "microsoft/deberta-v3-base"
 
 
 def tokenize_function(examples):
@@ -108,7 +108,7 @@ def progressive_training():
         learning_rate=2e-5,  # Standard learning rate
         weight_decay=0.01,
         logging_steps=50,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1",
@@ -122,7 +122,6 @@ def progressive_training():
         train_dataset=gt_train,
         eval_dataset=gt_val,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
     )
     
     # Train stage 1
@@ -148,7 +147,7 @@ def progressive_training():
         learning_rate=5e-6,  # Much lower learning rate for fine-tuning
         weight_decay=0.01,
         logging_steps=100,
-        evaluation_strategy="epoch",
+        eval_strategy="epoch",
         save_strategy="epoch",
         load_best_model_at_end=True,
         metric_for_best_model="eval_f1",
@@ -162,9 +161,7 @@ def progressive_training():
         train_dataset=pseudo_train,
         eval_dataset=pseudo_val,
         compute_metrics=compute_metrics,
-        tokenizer=tokenizer,
     )
-    
     # Train stage 2
     start_time = time.time()
     stage2_trainer.train()
@@ -173,7 +170,7 @@ def progressive_training():
     print(f"✅ Stage 2 completed in {stage2_time/60:.2f} minutes")
     
     # Save final model
-    final_model_path = "./final_model_progressive"
+    final_model_path = "./models/final_model_progressive"
     stage2_trainer.save_model(final_model_path)
     tokenizer.save_pretrained(final_model_path)
     
