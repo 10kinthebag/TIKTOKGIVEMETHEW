@@ -148,6 +148,9 @@ Hugging Face pre-trained models, particularly Sentence Transformers, are used to
 **Custom Pipeline**  
 A custom `ReviewClassificationPipeline` integrates rule-based filters with ML models to classify reviews. It evaluates inputs for spam, advertisement content, rants, or irrelevant information, returning a classification status, confidence score, reasoning, and the method used.
 
+**Tensorflow Keras**
+A pre-trained image classification model that evaluates the relevancy of the images provided by reviewers to the focus or interest of their review.
+
 ## **Datasets & Assets:**
 
 ## **Libraries & Frameworks:**
