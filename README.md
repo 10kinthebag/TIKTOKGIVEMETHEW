@@ -115,7 +115,8 @@ Our backend is designed to ensure high-quality, trustworthy review classificatio
 Before training, we correct inconsistencies in human-labeled data to match model expectations. For instance, if a friend labels `1=suspicious` but the model expects `1=valid`, our scripts automatically flip the labels and generate a verified dataset. This ensures alignment between the labels and model output, improving both training efficiency and evaluation accuracy.
 
 **2\. Hybrid Dataset Construction**  
- To maximize learning, we combine:
+
+To maximize learning, we combine:
 
 * Ground truth data: High-quality, human-annotated reviews.  
 * Pseudo-labeled data: Larger quantities of rule-based labeled reviews.
