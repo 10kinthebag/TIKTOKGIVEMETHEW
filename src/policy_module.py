@@ -165,27 +165,37 @@ def apply_policy_rules(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         flags_created += ['ad_flag', 'rant_flag', 'spam_flag', 'short_review_flag', 
                          'irrelevant_flag_rule', 'contradiction_flag', 'irrelevant_flag_semantic']
 
+    # Update policy violation to include image flag when it's processed
+    policy_flags = ['ad_flag','irrelevant_flag_rule','rant_flag',
+                   'irrelevant_flag_semantic','short_review_flag', 
+                   'spam_flag', 'contradiction_flag']
+    
+    # We'll add irrelevant_image_flag to policy violation after image processing
+    
+    # Image processing enabled
+    print("Loading image classification model...")
+    model = load_model()
+    if photo_col in df.columns:
+        def detect_image(photo):
+            if not isinstance(photo, str) or photo.strip() == "":
+                return False  # no photo → treat as not irrelevant
+            if photo.startswith("http://") or photo.startswith("https://"):
+                return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
+            else:
+                return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
+
+        print("Processing images for relevance detection...")
+        df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
+        flags_created.append('irrelevant_image_flag')
+    else:
+        # Add placeholder column for irrelevant_image_flag if no photo column
+        df['irrelevant_image_flag'] = False
+        flags_created.append('irrelevant_image_flag')
+
+    # Final policy violation calculation including image flag
     df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
                                  'irrelevant_flag_semantic','short_review_flag', 
-                                 'spam_flag', 'contradiction_flag']].any(axis=1)
-    
-    # COMMENTED OUT: Image processing temporarily disabled
-    # model = load_model()
-    # if photo_col in df.columns:
-    #     def detect_image(photo):
-    #         if not isinstance(photo, str) or photo.strip() == "":
-    #             return False  # no photo → treat as not irrelevant
-    #         if photo.startswith("http://") or photo.startswith("https://"):
-    #             return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
-    #         else:
-    #             return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
-    #
-    #     df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
-    #     flags_created.append('irrelevant_image_flag')
-    
-    # Add placeholder column for irrelevant_image_flag (set to False for all)
-    df['irrelevant_image_flag'] = False
-    flags_created.append('irrelevant_image_flag')
+                                 'spam_flag', 'contradiction_flag', 'irrelevant_image_flag']].any(axis=1)
 
     return df, flags_created
 

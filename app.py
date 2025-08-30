@@ -10,17 +10,57 @@ import json
 
 # --- MODEL LOADING ---
 ML_MODELS_AVAILABLE = False
+IMAGE_PROCESSING_AVAILABLE = False
 pipeline = None
 
-try:
-    from inference.hybrid_pipeline import ReviewClassificationPipeline
-    from eval.metrics import accuracy, precision_score, recall_score, f1_score
-    from src import policy_module
-    from src.image_processor import load_image_from_file, load_image_from_url, load_model, classify_image
+# Initialize placeholder functions
+def load_image_from_file(*args, **kwargs):
+    return None
+def load_image_from_url(*args, **kwargs):
+    return None
+def load_model(*args, **kwargs):
+    return None
+def classify_image(*args, **kwargs):
+    return "Unknown"
 
+try:
+    import sys
+    import os
+    import warnings
+    # Add current directory and parent directory to Python path
+    current_dir = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, current_dir)
+    
+    from inference.hybrid_pipeline import ReviewClassificationPipeline
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score
+    from src import policy_module
+    
     pipeline = ReviewClassificationPipeline()
     ML_MODELS_AVAILABLE = True
     print("✅ ML models and pipeline loaded successfully")
+    
+    # Try to import image processor functions (optional)
+    try:
+        import importlib.util
+        spec = importlib.util.spec_from_file_location("image_processor", 
+                                                     os.path.join(current_dir, "src", "image_processor.py"))
+        if spec is not None and spec.loader is not None:
+            img_module = importlib.util.module_from_spec(spec)
+            spec.loader.exec_module(img_module)
+            
+            # Override placeholder functions with actual ones
+            load_image_from_file = img_module.load_image_from_file
+            load_image_from_url = img_module.load_image_from_url
+            load_model = img_module.load_model
+            classify_image = img_module.classify_image
+            
+            IMAGE_PROCESSING_AVAILABLE = True
+            print("✅ Image processing functions loaded successfully")
+        else:
+            raise ImportError("Could not create module spec for image_processor")
+    except Exception as img_err:
+        print(f"⚠️ Image processing functions unavailable: {img_err}")
+        print("⚠️ Using placeholder functions for image processing")
 
 except ImportError as e:
     print(f"⚠️ ImportError: {e}")
@@ -286,7 +326,7 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-pipeline = ReviewClassificationPipeline()
+# pipeline = ReviewClassificationPipeline()
 
 # YOUR ML MODEL INTEGRATION POINT
 def analyze_review_with_ml(review_text, business_type="general"):

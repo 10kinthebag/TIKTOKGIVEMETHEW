@@ -22,9 +22,22 @@ def load_model():
 # ------------------------------
 def load_image_from_file(filepath: str, target_size=(299, 299)):
     """Load and preprocess image from local file"""
-    img = image.load_img("data/newData/" + filepath, target_size=target_size)
-    img_array = image.img_to_array(img)
-    return np.expand_dims(img_array, axis=0)
+    # Handle different possible image paths
+    possible_paths = [
+        filepath,  # Direct path
+        "data/newData/" + filepath,  # Original path
+        "data/kaggle_data/dataset/" + filepath,  # Kaggle dataset path
+        "data/kaggle_data/" + filepath  # Alternative Kaggle path
+    ]
+    
+    for path in possible_paths:
+        if os.path.exists(path):
+            img = image.load_img(path, target_size=target_size)
+            img_array = image.img_to_array(img)
+            return np.expand_dims(img_array, axis=0)
+    
+    # If no valid path found, raise an error with all attempted paths
+    raise FileNotFoundError(f"Image not found. Tried paths: {possible_paths}")
 
 def load_image_from_url(url, target_size=(299, 299)):
     """Load and preprocess image from URL"""
