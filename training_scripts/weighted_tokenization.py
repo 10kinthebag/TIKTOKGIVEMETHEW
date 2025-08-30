@@ -10,7 +10,7 @@ import torch
 import numpy as np
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "roberta-base"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 
@@ -20,7 +20,7 @@ def tokenize_function(examples):
         examples["text"],
         truncation=True,
         padding="max_length",
-        max_length=256,
+        max_length=512,  # DeBERTa-v3 can handle longer sequences better
     )
 
 

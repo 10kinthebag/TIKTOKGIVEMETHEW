@@ -9,7 +9,7 @@ from sklearn.model_selection import train_test_split
 import numpy as np
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "microsoft/deberta-v3-base"
 tokenizer = AutoTokenizer.from_pretrained(MODEL_NAME)
 
 

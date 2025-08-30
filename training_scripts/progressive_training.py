@@ -10,7 +10,7 @@ import pandas as pd
 from training_scripts.metrics import compute_metrics
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "microsoft/deberta-v3-base"
 
 
 def tokenize_function(examples):
@@ -170,7 +170,7 @@ def progressive_training():
     print(f"✅ Stage 2 completed in {stage2_time/60:.2f} minutes")
     
     # Save final model
-    final_model_path = "./final_model_progressive"
+    final_model_path = "./models/final_model_progressive"
     stage2_trainer.save_model(final_model_path)
     tokenizer.save_pretrained(final_model_path)
     

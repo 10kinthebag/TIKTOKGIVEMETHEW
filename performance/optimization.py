@@ -1,5 +1,5 @@
 import time
-from hybrid_pipeline import ReviewClassificationPipeline
+from inference import ReviewClassificationPipeline
 
 
 def benchmark_pipeline(pipeline, test_texts, n=100):

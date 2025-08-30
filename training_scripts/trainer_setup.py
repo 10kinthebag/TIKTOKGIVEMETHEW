@@ -11,7 +11,7 @@ except ImportError:
     from training_scripts.metrics import compute_metrics
 
 
-MODEL_NAME = "distilbert-base-uncased"
+MODEL_NAME = "roberta-base"
 
 
 def get_trainer():
