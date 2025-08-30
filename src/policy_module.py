@@ -1,3 +1,5 @@
+from typing import Tuple, List
+
 import re
 import pandas as pd
 import os
@@ -33,6 +35,14 @@ rant_phrases = [
     "supposedly", "apparently", "rumor has it"
 ]
 
+# Define sentiment words for short review detection
+sentiment_words = [
+    "good", "great", "excellent", "amazing", "wonderful", "fantastic", "awesome", "perfect",
+    "bad", "terrible", "awful", "horrible", "disgusting", "worst", "hate", "disappointed",
+    "love", "like", "enjoy", "recommend", "delicious", "tasty", "fresh", "clean",
+    "dirty", "rude", "slow", "fast", "friendly", "nice", "poor", "quality"
+]
+
 # --- Detection Functions ---
 
 def detect_advertisement(text: str) -> bool:
@@ -55,6 +65,29 @@ def detect_rant_without_visit(text: str) -> bool:
 def detect_short_review(text: str, min_words: int = 3) -> bool:
     
     return len(text.split()) < min_words and not any(w in text.lower() for w in sentiment_words)
+
+def detect_irrelevant_rule_based(text: str) -> bool:
+    """Detect irrelevant content using rule-based approach."""
+    irrelevant_keywords = [
+        "phone app", "mobile app", "app store", "download", "software", "video game",
+        "online shopping", "e-commerce", "website", "social media", "facebook", "twitter",
+        "politics", "election", "government", "weather", "sports", "movie", "tv show"
+    ]
+    text_lower = text.lower()
+    return any(keyword in text_lower for keyword in irrelevant_keywords)
+
+def detect_contradiction(text: str) -> bool:
+    """Detect contradictory statements in reviews."""
+    contradiction_patterns = [
+        r"love.*but.*terrible",
+        r"great.*but.*awful",
+        r"excellent.*but.*worst",
+        r"amazing.*but.*horrible",
+        r"best.*but.*never.*again",
+        r"recommend.*but.*avoid"
+    ]
+    text_lower = text.lower()
+    return any(re.search(pattern, text_lower) for pattern in contradiction_patterns)
 
 def detect_spam_content(text: str) -> bool:
 
@@ -111,7 +144,7 @@ def detect_image_relevance_file(filepath: str, model) -> bool:
         return False
     
 
-def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
+def apply_policy_rules(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
     
     flags_created = []
 
@@ -123,24 +156,36 @@ def apply_policy_rules(df: pd.DataFrame) -> pd.DataFrame:
         df['rant_flag'] = df['text'].apply(detect_rant_without_visit)
         df['spam_flag'] = df['text'].apply(detect_spam_content)
         df['short_review_flag'] = df['text'].apply(detect_short_review)
+        df['irrelevant_flag_rule'] = df['text'].apply(detect_irrelevant_rule_based)
+        df['contradiction_flag'] = df['text'].apply(detect_contradiction)
+        
+        # Placeholder for semantic irrelevance detection (currently disabled)
+        df['irrelevant_flag_semantic'] = False
 
-        flags_created += ['ad_flag', 'rant_flag', 'spam_flag', 'short_review_flag']
+        flags_created += ['ad_flag', 'rant_flag', 'spam_flag', 'short_review_flag', 
+                         'irrelevant_flag_rule', 'contradiction_flag', 'irrelevant_flag_semantic']
 
     df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
                                  'irrelevant_flag_semantic','short_review_flag', 
                                  'spam_flag', 'contradiction_flag']].any(axis=1)
-    model = load_model()
-    if photo_col in df.columns:
-        def detect_image(photo):
-            if not isinstance(photo, str) or photo.strip() == "":
-                return False  # no photo → treat as not irrelevant
-            if photo.startswith("http://") or photo.startswith("https://"):
-                return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
-            else:
-                return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
-
-        df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
-        flags_created.append('irrelevant_image_flag')
+    
+    # COMMENTED OUT: Image processing temporarily disabled
+    # model = load_model()
+    # if photo_col in df.columns:
+    #     def detect_image(photo):
+    #         if not isinstance(photo, str) or photo.strip() == "":
+    #             return False  # no photo → treat as not irrelevant
+    #         if photo.startswith("http://") or photo.startswith("https://"):
+    #             return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
+    #         else:
+    #             return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
+    #
+    #     df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
+    #     flags_created.append('irrelevant_image_flag')
+    
+    # Add placeholder column for irrelevant_image_flag (set to False for all)
+    df['irrelevant_image_flag'] = False
+    flags_created.append('irrelevant_image_flag')
 
     return df, flags_created
 
@@ -155,8 +200,10 @@ def filter_dataset(df: pd.DataFrame, flags: list) -> pd.DataFrame:
 
         df_flag = df[df[existing_flags].any(axis=1)].reset_index(drop=True)
         os.makedirs("data/filteredDataWithFlags", exist_ok=True)
-        output_file = os.path.join("data/filteredDataWithFlags", f"filteredWithFlags_{int(time.time())}.csv")
-        df_flag.to_csv(output_file, index=False)
+        timestamp = int(time.time())
+        output_file_flags = os.path.join("data/filteredDataWithFlags", f"cleaned_reviews_{timestamp}.csv")
+        df_flag.to_csv(output_file_flags, index=False)
+        print(f"Flagged data saved to {output_file_flags}")
 
         df_new = df[~df[existing_flags].any(axis=1)].reset_index(drop=True)
         df_new = df_new.drop(existing_flags, axis=1, errors='ignore')
@@ -168,14 +215,15 @@ def filter_dataset(df: pd.DataFrame, flags: list) -> pd.DataFrame:
 # --- Main method ---
 
 def main(input_csv: str):
-
+    
     df = pd.read_csv(input_csv)
 
-    df, flags = apply_policy_rules(df)
-    filtered_df = filter_dataset(df, flags)
+    df_with_flags, flags = apply_policy_rules(df)
+    filtered_df = filter_dataset(df_with_flags, flags)
 
     os.makedirs("data/filteredData", exist_ok=True)
-    output_file = os.path.join("data/filteredData", f"filtered_{int(time.time())}.csv")
+    timestamp = int(time.time())
+    output_file = os.path.join("data/filteredData", f"cleaned_reviews_{timestamp}.csv")
     filtered_df.to_csv(output_file, index=False)
 
     print(f"Original dataset size: {len(df)}")
