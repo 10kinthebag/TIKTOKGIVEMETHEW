@@ -222,7 +222,7 @@ def main(input_csv: str):
     filtered_df = filter_dataset(df)
 
     os.makedirs("data/filteredData", exist_ok=True)
-    output_file = os.path.join("data/filteredData", f"cleaned_reviews_{int(time.time())}.csv")
+    output_file = os.path.join("data/filteredData", "cleaned_reviews_{int(time.time())}.csv")
     filtered_df.to_csv(output_file, index=False)
 
     print(f"Original dataset size: {len(df)}")
