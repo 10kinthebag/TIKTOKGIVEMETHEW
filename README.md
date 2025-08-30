@@ -15,8 +15,6 @@ ReviewGuard AI is a multimodal review moderation system developed to automatical
      
    git clone [https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git](https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git)
 
-cd XXX
-
 2. Create and activate a virtual environment
 
    python \-m venv venv
