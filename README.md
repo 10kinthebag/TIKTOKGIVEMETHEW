@@ -9,13 +9,15 @@ This document provides details about the frontend and backend implementation for
 
 ReviewGuard AI is a multimodal review moderation system developed to automatically assess the quality and relevancy of Google location reviews, improving reliability of review platforms and enhancing user experience. It is built using Python, PyTorch, and Hugging Face models, with a Streamlit and Gradio frontend, leveraging data processing libraries, machine learning pipelines, and web technologies for an interactive and efficient user experience.
 
+Github Link: [https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git](https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git)
+
 ## **Setup Instructions:**
 
 1. Clone the repository  
      
-   git clone [https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git](https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git)
-
-2. Create and activate a virtual environment
+   git clone [https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git](https://github.com/10kinthebag/TIKTOKGIVEMETHEW.git)  
+     
+2. Create and activate a virtual environment (optional)
 
    python \-m venv venv
 
@@ -30,7 +32,7 @@ pip install \-r requirements.txt
 4. Prepare data
 
 - Place your raw dataset (e.g. `reviews.csv`) inside the `data/` folder.  
-- Ensure the file has at least the following columns:  
+- E.g. Ensure the file has at least the following columns:  
   * `business_name`  
   * `author_name`  
   * `text` (review text)  
@@ -39,7 +41,7 @@ pip install \-r requirements.txt
 
 **To obtain results:** 
 
-Run the review cleaning pipeline: python policy\_module.py data/reviews.csv
+Run the review cleaning pipeline: E.g. python policy\_module.py data/reviews.csv
 
 ### 
 
@@ -146,10 +148,40 @@ Hugging Face pre-trained models, particularly Sentence Transformers, are used to
 **Custom Pipeline**  
 A custom `ReviewClassificationPipeline` integrates rule-based filters with ML models to classify reviews. It evaluates inputs for spam, advertisement content, rants, or irrelevant information, returning a classification status, confidence score, reasoning, and the method used.
 
-**Tensorflow Keras**  
+**Tensorflow Keras**
+
 A pre-trained image classification model that evaluates the relevancy of the images provided by reviewers to the focus or interest of their review.
 
 ## **Datasets & Assets:**
+
+### **1\. Google Maps Restaurant Reviews (Kaggle)**
+
+**Description:**  
+A curated collection of **1,100 restaurant reviews** sourced from Google Maps, spanning approximately **100 unique restaurants**. Each entry includes textual review content—and in some cases, associated images or snapshots of the review. 
+
+Link: [Kaggle](https://www.kaggle.com/datasets/denizbilginn/google-maps-restaurant-reviews?utm_source=chatgpt.com)[SpringerLink](https://link.springer.com/article/10.1007/s40558-024-00309-9?utm_source=chatgpt.com)
+
+These reviews serve as the primary corpus for initial analysis, featuring a range of sentiments and styles. While useful for leveraging NLP techniques like sentiment analysis, topic modeling, or spam filtering, the dataset does not include structured labels for policy violations (e.g., spam detection, irrelevancy filtering). Some variants of the dataset include columns like `business_name`, `author_name`, `text`, `photo`, `rating`, and `rating_category`, which can be adapted for multimodal modeling or classification tasks. 
+
+Link: [GitHub](https://github.com/denizbilgin/Google-Maps-Reviews-Categorization-And-Analysis?utm_source=chatgpt.com)
+
+### **2\. Singapore Restaurant Review Analytics (Opendatabay)**
+
+**Description:**  
+A free, publicly available dataset aggregating **5,649 unique restaurant entries** from the 
+
+**Foodpanda platform in Singapore**, as of **19 April 2025**. Link: [Opendatabay](https://www.opendatabay.com/data/consumer/181c45e5-d0d7-40cb-95c4-f97aa161f421)
+
+Each restaurant record includes:
+
+* **StoreId**: Unique identifier  
+* **CompleteStoreName**  
+* **FoodType** (cuisine classification, e.g., Chinese, Indian, Other)  
+* **AverageRating** (range: 1.00 – 5.00)  
+* **Number of Reviewers** (indicating review volume)  
+* Note: Columns like `City` and `Location` currently have null values.
+
+This dataset is ideal for high-level restaurant performance analysis based on ratings, cuisine types, and reviewer counts within a Singaporean context.
 
 ## **Libraries & Frameworks:**
 
