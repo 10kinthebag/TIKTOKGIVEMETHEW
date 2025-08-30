@@ -25,7 +25,6 @@ ad_pattern = re.compile(
     re.IGNORECASE
 )
 
-
 rant_phrases = [
     "never been", "haven't been", "havent been", "have not been",
     "never visited", "haven't visited", "havent visited", "have not visited",
@@ -51,12 +50,6 @@ def detect_advertisement(text: str) -> bool:
     
     return len(matches) > 0
 
-#def detect_irrelevant(text: str) -> bool:
-
-    #text_lower = text.lower().split()
-
-    #return any(word in text_lower for word in all_irrelevant_keywords)
-
 def detect_rant_without_visit(text: str) -> bool:
 
     return any(phrase in text.lower() for phrase in rant_phrases)
@@ -64,7 +57,7 @@ def detect_rant_without_visit(text: str) -> bool:
 
 def detect_short_review(text: str, min_words: int = 3) -> bool:
     
-    return len(text.split()) < min_words and not any(w in text.lower() for w in sentiment_words)
+    return len(text.split()) < min_words 
 
 def detect_irrelevant_rule_based(text: str) -> bool:
     """Detect irrelevant content using rule-based approach."""
@@ -106,23 +99,14 @@ def detect_spam_content(text: str) -> bool:
     
     return False
 
-# Semantic Relevancy 
-# embedding_model = SentenceTransformer('all-MiniLM-L6-v2') 
-
-# def detect_irrelevant_semantic(text: str, business_name: str) -> bool:
-#     emb_review = embedding_model.encode(text, convert_to_tensor=True)
-#     emb_location = embedding_model.encode(business_name, convert_to_tensor=True)
-#     similarity = util.cos_sim(emb_review, emb_location).item()
-#     return similarity < 0.2 # threshold
-
-def detect_image_relevance_url(url: str, model) -> bool:
+def detect_image_relevance_url(url: str, model, idx_to_class) -> bool:
 
     try:
         # Load the image from URL
         img_array = load_image_from_url(url)
 
         # Use your existing classifier
-        category = classify_image(model, img_array)
+        category = classify_image(model, idx_to_class, img_array)
 
         # Return True if category is not 'Other'
         return category != "Other"
@@ -131,13 +115,13 @@ def detect_image_relevance_url(url: str, model) -> bool:
         print(f"Error processing image from {url}: {e}")
         return False
 
-def detect_image_relevance_file(filepath: str, model) -> bool:
+def detect_image_relevance_file(filepath: str, model, idx_to_class) -> bool:
     """
     Returns True if image from local file is relevant (not 'Other').
     """
     try:
         img_array = load_image_from_file(filepath)
-        category = classify_image(model, img_array)
+        category = classify_image(model, idx_to_class, img_array)
         return category != "Other"
     except Exception as e:
         print(f"Error processing image file {filepath}: {e}")
@@ -165,33 +149,24 @@ def apply_policy_rules(df: pd.DataFrame) -> Tuple[pd.DataFrame, List[str]]:
         flags_created += ['ad_flag', 'rant_flag', 'spam_flag', 'short_review_flag', 
                          'irrelevant_flag_rule', 'contradiction_flag', 'irrelevant_flag_semantic']
 
-    df['policy_violation'] = df[['ad_flag','irrelevant_flag_rule','rant_flag',
-                                 'irrelevant_flag_semantic','short_review_flag', 
-                                 'spam_flag', 'contradiction_flag']].any(axis=1)
+    model, idx_to_class = load_model()
     
-    # COMMENTED OUT: Image processing temporarily disabled
-    # model = load_model()
-    # if photo_col in df.columns:
-    #     def detect_image(photo):
-    #         if not isinstance(photo, str) or photo.strip() == "":
-    #             return False  # no photo → treat as not irrelevant
-    #         if photo.startswith("http://") or photo.startswith("https://"):
-    #             return not detect_image_relevance_url(photo, model)  # flag True if irrelevant
-    #         else:
-    #             return not detect_image_relevance_file(photo, model)  # flag True if irrelevant
-    #
-    #     df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
-    #     flags_created.append('irrelevant_image_flag')
-    
-    # Add placeholder column for irrelevant_image_flag (set to False for all)
-    df['irrelevant_image_flag'] = False
-    flags_created.append('irrelevant_image_flag')
+    if photo_col in df.columns:
+        def detect_image(photo):
+            if not isinstance(photo, str) or photo.strip() == "":
+                return False  # no photo → treat as not irrelevant
+            if photo.startswith("http://") or photo.startswith("https://"):
+                return not detect_image_relevance_url(photo, model, idx_to_class)  # flag True if irrelevant
+            else:
+                return not detect_image_relevance_file(photo, model, idx_to_class)  # flag True if irrelevant
+
+        df['irrelevant_image_flag'] = df['photo'].apply(detect_image)    
+        flags_created.append('irrelevant_image_flag')
 
     return df, flags_created
 
 
 #Removes rows that violates any policy rules and returns the filtered dataframe
-#TEMP!! ALSO PRODUCES A DATAFRAME WITH THE FLAG COLUMNS FOR POLICY TESTING
 def filter_dataset(df: pd.DataFrame, flags: list) -> pd.DataFrame:
 
     existing_flags = [f for f in flags if f in df.columns]
