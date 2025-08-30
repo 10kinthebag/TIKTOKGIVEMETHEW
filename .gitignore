@@ -47,6 +47,7 @@ checkpoints/
 *.txt
 data/
 groundTruthData/
+dataset/
 
 # Jupyter Notebook
 .ipynb_checkpoints
